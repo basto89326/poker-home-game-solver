@@ -1,0 +1,58 @@
+{
+  "name": "Dave",
+  "archetype": "Loose passive calling station",
+  "summary": "Dave plays almost every hand, calls down with any pair, rarely raises, and only bets big on the river with the nuts.",
+  "stats": {
+    "vpip": {
+      "estimate": 0.6,
+      "confidence": "high"
+    },
+    "pfr": {
+      "estimate": 0.04,
+      "confidence": "medium"
+    },
+    "open_raise": {
+      "estimate": 0.08,
+      "confidence": "medium"
+    },
+    "fold_to_3bet": {
+      "estimate": 0.45,
+      "confidence": "low"
+    },
+    "fold_to_cbet": {
+      "estimate": 0.25,
+      "confidence": "high"
+    },
+    "aggression": {
+      "estimate": 0.15,
+      "confidence": "medium"
+    },
+    "river_bluff": {
+      "estimate": 0.03,
+      "confidence": "medium"
+    }
+  },
+  "tendencies": [
+    "Calls down with any pair, including second pair over three streets.",
+    "Basically never folds top pair.",
+    "Rarely raises unless holding a monster hand.",
+    "A big river bet from Dave always means the nuts."
+  ],
+  "modifiers": [
+    {
+      "condition": "After a couple of beers",
+      "description": "Plays even more hands preflop.",
+      "adjustments": {
+        "vpip": 0.1
+      }
+    },
+    {
+      "condition": "When losing",
+      "description": "Gets quiet and plays much tighter.",
+      "adjustments": {
+        "vpip": -0.2
+      }
+    }
+  ],
+  "last_updated": "2026-11-15"
+}

@@ -1,0 +1,8 @@
+CLAUDE.md
+
+# Generated / local files
+__pycache__/
+.pytest_cache/
+data/
+config.yaml
+.env

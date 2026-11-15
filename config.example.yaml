@@ -1,0 +1,14 @@
+# Copy to config.yaml to change settings. Every setting is optional.
+# No API key is needed: profiles are built with the Claude Code CLI on your plan.
+
+server:
+  host: 127.0.0.1
+  port: 5000
+
+claude:
+  executable: claude   # path to the Claude Code CLI if it isn't on PATH
+  model:               # leave empty for Claude Code's default model
+  timeout: 180         # seconds to wait for a profile
+
+# Folder (relative to the project) that holds notes/ and profiles/
+# data_root: .
