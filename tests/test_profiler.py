@@ -152,3 +152,23 @@ class TestBuilder:
     def test_needs_notes(self):
         with pytest.raises(BuilderError, match="no notes"):
             build_profile("Dave", "  ", [])
+
+
+class TestSelf:
+    def test_self_is_hidden_reserved_and_permanent(self, tmp_path):
+        store = PlayerStore(tmp_path)
+        store.ensure_self()
+        store.create("Dave")
+        assert store.slugs() == ["dave"]  # your own notes aren't a friend
+        assert store.load_notes("you").name == "You"
+        with pytest.raises(ValueError, match="reserved"):
+            store.create("You")
+        with pytest.raises(ValueError, match="can't be removed"):
+            store.delete("you")
+
+    def test_ensure_self_keeps_existing_notes(self, tmp_path):
+        store = PlayerStore(tmp_path)
+        store.ensure_self()
+        store.save_notes("you", PlayerNotes("You", "I call too much."))
+        store.ensure_self()
+        assert store.load_notes("you").notes == "I call too much."

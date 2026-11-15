@@ -87,18 +87,22 @@ Everything runs in a local web app, so after installing you never need the comma
 ### Solver screen: play a hand through
 - **Table setup:** choose how many players (2-9), who sits in each seat (you plus friends from your profiles) and each stack. Defaults come from your home game: $0.05/$0.10 blinds, $20 stacks.
 - **Seat by seat:** the screen shows the player to act. Pick their action (fold, check/call, or raise to an amount; the usual open of $0.50 and 3x re-raises are pre-filled) and it moves to the next seat until preflop is over. **Undo**, **Restart hand** and **Change players** are always there.
-- **Predicted / Best play toggle** on a friend's turn: *Predicted* is what their profile says they'll do with each hand; *Best play* is the most profitable choice in their seat against everyone else's profiles. On your turn you always see best play.
+- **Predicted / Best play toggle:** *Predicted* is what the player's profile says they'll do with each hand; *Best play* is the most profitable choice in their seat against everyone else's profiles. It works on your turn too (using your own profile), so you can compare your habits with the best play. Your turn starts on best play.
 - **13x13 hand grid** coloured by raise / call / fold. Hands a player can no longer have (given their earlier actions) are faded; close calls are marked with `~`.
 - **Seats bar** with stacks, bets, pot, amount to call and pot odds, plus an **action log**.
 - **Profile panel** with the acting player's key preflop stats and confidence levels.
-- **Range summary** and a **hand panel** with frequencies, average results in dollars and a plain-English *why*.
+- **Range summary** (how the player's whole range splits between actions) and a **hand panel** that names one action per hand (*Best*, or *Likely* / *Sometimes* for predicted play), with average results in dollars and a plain-English *why*.
 
 ### Players screen
 - **Notes editor** for each friend (saves automatically), plus a log of short notes from each session
 - **Rebuild profile with AI** to turn your notes into the structured profile
 - **Profile view** with stats, confidence badges, tendencies, and "changes with the night" modifiers (tilt, drinking, etc.)
 - **"Play a hand vs [player]"** to jump to the table setup with that friend seated
-- **Remove player** (asks first) to delete a friend's notes and profile
+- **Remove a player** with the trash icon that appears when you hover over them in *Your table* (asks first)
+
+### Profile screen
+- **Your own notes, session notes and AI profile**, built the same way as a friend's
+- The solver uses it for your seat: your *Predicted* view, and how friends' best play expects you to respond. Without a profile you're treated as a typical player.
 
 ---
 
@@ -110,6 +114,7 @@ Everything runs in a local web app, so after installing you never need the comma
 - [x] **Heads-up river solver** (CFR+) with node-locking to a profile
 - [x] **Profile updates**: add session notes after each game and rebuild the profile
 - [x] **Add and remove players**
+- [x] **Your own profile** (Profile tab), used for your seat in the play-through
 - [ ] **Flop**: choose the three flop cards and keep playing the hand
 - [ ] **Turn and river in the play-through** (the river solver is available through the API only)
 - [ ] **Dynamic modifiers** applied in the solver (currently shown on the profile only)
@@ -121,7 +126,7 @@ Everything runs in a local web app, so after installing you never need the comma
 
 ```
 poker-home-game-solver/
-|-- notes/                  # Your raw notes, one Markdown file per player
+|-- notes/                  # Your raw notes, one Markdown file per player (you.md is yours)
 |-- profiles/               # AI-generated player profiles (JSON)
 |-- designs/                # UI mock-ups the front end follows
 |-- data/                   # Cached preflop equity table (generated, not committed)

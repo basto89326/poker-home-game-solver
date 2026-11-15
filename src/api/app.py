@@ -30,6 +30,7 @@ def create_app(config: Config) -> Flask:
     """Build the app; all state lives on disk under ``config.data_root``."""
     app = Flask(__name__, static_folder=None)
     store = PlayerStore(config.data_root)
+    store.ensure_self()
 
     def require_player(slug: str) -> None:
         if not store.exists(slug):
@@ -94,7 +95,10 @@ def create_app(config: Config) -> Flask:
     @app.delete("/api/players/<slug>")
     def delete_player(slug: str):
         require_player(slug)
-        store.delete(slug)
+        try:
+            store.delete(slug)
+        except ValueError as exc:
+            abort(400, description=str(exc))
         return "", 204
 
     @app.put("/api/players/<slug>/notes")
@@ -153,11 +157,10 @@ def create_app(config: Config) -> Flask:
             abort(400, description="each seat must be an object")
         player = str(raw.get("player", ""))
         stack = float(raw.get("stack", config.stack / config.big_blind))
-        if player == YOU:
-            return SeatSpec(YOU, "You", default_profile("You"), False, stack)
         require_player(player)
         profile, using_defaults = profile_or_default(player)
-        return SeatSpec(player, profile.name, profile, not using_defaults, stack)
+        name = "You" if player == YOU else profile.name
+        return SeatSpec(player, name, profile, not using_defaults, stack)
 
     @app.post("/api/hand")
     def hand():
@@ -172,6 +175,7 @@ def create_app(config: Config) -> Flask:
                        for a in raw_actions]
             raise_to = body.get("raise_to")
             result = analyze(seats, actions, settings, mode=str(body.get("mode", "best")),
+                             your_mode=str(body.get("your_mode", "best")),
                              raise_to=None if raise_to is None else float(raise_to))
         except (KeyError, TypeError) as exc:
             abort(400, description=f"malformed request: {exc}")

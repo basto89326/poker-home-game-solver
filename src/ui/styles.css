@@ -43,8 +43,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn-primary { background: var(--accent); color: #1a1408; border-color: var(--accent); padding: 12px 20px; }
 .btn-primary:disabled { opacity: .6; cursor: progress; }
 .btn-dashed { background: none; border-style: dashed; width: 100%; }
-.btn-danger { background: none; color: var(--low); border-color: transparent; margin-left: auto; }
-.btn-danger:hover { border-color: var(--low); }
 
 /* ----- top bar ----- */
 .topbar {
@@ -133,13 +131,14 @@ main { padding: 20px 24px; }
 .range-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; }
 
 .hand-name { font-size: 24px; font-weight: 800; }
-.hand-bars { display: grid; gap: 8px; }
-.hand-bar { display: grid; grid-template-columns: 60px 1fr 48px; align-items: center; gap: 12px; }
-.hand-bar .value { font-weight: 700; text-align: right; }
-.hand-bar .bar { height: 8px; }
-.hand-bar .bar > i.threebet { background: var(--threebet); }
-.hand-bar .bar > i.call { background: var(--call); }
-.hand-bar .bar > i.fold { background: var(--muted); }
+.hand-bars { display: grid; gap: 4px; }
+.hand-action { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); }
+.hand-action.on { color: var(--text); background: var(--panel-2); font-weight: 600; }
+.hand-action .tag {
+  margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  background: var(--accent-bg); color: var(--accent);
+}
+.hand-action .tag.secondary { background: var(--bg); color: var(--muted); }
 .why { background: var(--panel-2); border-radius: 10px; padding: 12px 14px; margin-top: 14px; }
 .why-label { color: var(--accent); font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
 .why p { margin: 6px 0 0; line-height: 1.55; }
@@ -149,11 +148,20 @@ main { padding: 20px 24px; }
 /* ----- players screen ----- */
 .players { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .player-list { display: grid; gap: 8px; margin-bottom: 8px; }
-.player-list button {
-  text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 14px; cursor: pointer;
+.player-item { position: relative; }
+.player-item .pick {
+  width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 44px 10px 14px; cursor: pointer;
 }
-.player-list button.active { border-color: var(--accent); background: var(--accent-bg); }
+.player-item .pick.active { border-color: var(--accent); background: var(--accent-bg); }
+.player-item .trash {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: grid; place-items: center;
+  width: 30px; height: 30px; border: none; border-radius: 8px; background: none; color: var(--muted);
+  cursor: pointer; opacity: 0;
+}
+.player-item:hover .trash, .player-item:focus-within .trash { opacity: 1; }
+.player-item .trash:hover { color: var(--low); background: var(--low-bg); }
+.player-item .trash svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
 .player-list strong { display: block; font-size: 15px; }
 .player-list small { color: var(--muted); }
 .add-player { display: grid; gap: 8px; }
@@ -175,6 +183,8 @@ textarea {
 .session-form input { flex: 1; }
 .rebuild-row { display: flex; align-items: center; gap: 14px; margin-top: 24px; }
 .players.empty .notes-card, .players.empty .profile-card { display: none; }
+.players.self { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.players.self .table-list, .players.self #solve-vs-btn { display: none; }
 
 .stat-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat-tile { background: var(--panel-2); border-radius: 10px; padding: 12px; }
@@ -185,7 +195,7 @@ textarea {
 .chip { border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; }
 
 @media (max-width: 1100px) {
-  .solver, .players { grid-template-columns: 1fr; }
+  .solver, .players, .players.self { grid-template-columns: 1fr; }
 }
 
 /* ----- table setup ----- */

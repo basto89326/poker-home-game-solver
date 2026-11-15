@@ -1,4 +1,4 @@
-// App entry: shared state and hash routing (#solver, #players, #players/<slug>).
+// App entry: shared state and hash routing (#solver, #players, #players/<slug>, #profile).
 
 import { api } from "./api.js";
 import { $ } from "./dom.js";
@@ -27,12 +27,14 @@ const playersView = createPlayersView(app);
 
 async function route() {
   const [view, slug] = location.hash.replace(/^#/, "").split("/");
-  const name = view === "players" ? "players" : "solver";
+  const name = ["players", "profile"].includes(view) ? view : "solver";
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $("view-solver").hidden = name !== "solver";
-  $("view-players").hidden = name !== "players";
+  $("view-players").hidden = name === "solver"; // the Profile tab reuses the Players screen
   if (name === "players") {
     await playersView.show(slug ? decodeURIComponent(slug) : null);
+  } else if (name === "profile") {
+    await playersView.showSelf();
   } else {
     await playersView.flush();
     solverView.show();

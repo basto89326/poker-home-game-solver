@@ -1,25 +1,52 @@
-// Players screen: player list, notes editor, session notes and AI profile.
+// Players and Profile screens: notes editor, session notes and AI profile.
+// The Profile tab is the same screen showing your own notes (slug "you")
+// without the friends list.
 
 import { api } from "./api.js";
 import { $, confidenceBadge, el, pct, shortDate, statBar, STAT_LABELS } from "./dom.js";
 
 const SAVE_DELAY_MS = 800;
+const SELF = "you";
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function trashIcon() {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ["M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3"]) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
 
 export function createPlayersView(app) {
-  const state = { slug: null, player: null, saveTimer: null, savedText: "" };
+  const state = { slug: null, friendSlug: null, player: null, saveTimer: null, savedText: "" };
+  const isSelf = () => state.slug === SELF;
 
   function renderList() {
     $("player-list").replaceChildren(...app.players.map((p) => el(
-      "button",
-      { type: "button", class: p.slug === state.slug ? "active" : null, onclick: () => select(p.slug) },
-      el("strong", {}, p.name),
-      el("small", {}, `${p.archetype ?? "No profile yet"} \u00b7 ${p.note_count} note${p.note_count === 1 ? "" : "s"}`),
+      "div", { class: "player-item" },
+      el("button",
+        { type: "button", class: `pick${p.slug === state.slug ? " active" : ""}`, onclick: () => select(p.slug) },
+        el("strong", {}, p.name),
+        el("small", {},
+          `${p.archetype ?? "No profile yet"} \u00b7 ${p.note_count} note${p.note_count === 1 ? "" : "s"}`)),
+      el("button",
+        { type: "button", class: "trash", title: `Remove ${p.name}`, "aria-label": `Remove ${p.name}`,
+          onclick: () => removePlayer(p) },
+        trashIcon()),
     )));
   }
 
   function renderNotes() {
     const player = state.player;
-    $("notes-heading").textContent = `Notes on ${player.name}`;
+    $("notes-heading").textContent = isSelf() ? "Notes on your game" : `Notes on ${player.name}`;
+    $("notes-hint").textContent = isSelf()
+      ? "Describe how you actually play, leaks and all. The AI turns this into your profile, which the "
+        + "solver uses for your seat."
+      : "Write the way you'd describe them to a friend. The AI turns this into the profile on the right.";
     $("notes-text").value = player.notes;
     state.savedText = player.notes;
     $("save-status").textContent = "";
@@ -62,8 +89,10 @@ export function createPlayersView(app) {
   async function select(slug) {
     await flushNotes();
     state.slug = slug;
+    if (slug && slug !== SELF) state.friendSlug = slug;
     $("rebuild-error").hidden = true;
     $("view-players").classList.toggle("empty", !slug);
+    $("view-players").classList.toggle("self", isSelf());
     renderList();
     if (!slug) {
       state.player = null;
@@ -159,21 +188,24 @@ export function createPlayersView(app) {
     }
   }
 
-  async function removePlayer() {
-    const { name } = state.player;
-    const ok = window.confirm(`Remove ${name}? This permanently deletes their notes and profile.`);
+  async function removePlayer(player) {
+    const ok = window.confirm(`Remove ${player.name}? This permanently deletes their notes and profile.`);
     if (!ok) return;
-    clearTimeout(state.saveTimer);
-    const slug = state.slug;
+    const removingSelected = player.slug === state.slug;
+    if (removingSelected) {
+      clearTimeout(state.saveTimer);
+      state.player = null; // nothing left to save
+    }
     try {
-      await api.deletePlayer(slug);
+      await api.deletePlayer(player.slug);
     } catch (err) {
       showError(err.message);
       return;
     }
-    state.player = null; // nothing left to save
+    if (state.friendSlug === player.slug) state.friendSlug = null;
     await app.refreshPlayers();
-    await select(app.players[0]?.slug ?? null);
+    if (removingSelected) await select(app.players[0]?.slug ?? null);
+    else renderList();
   }
 
   $("notes-text").addEventListener("input", scheduleSave);
@@ -181,15 +213,18 @@ export function createPlayersView(app) {
   $("add-player-form").addEventListener("submit", addPlayer);
   $("session-form").addEventListener("submit", addSession);
   $("rebuild-btn").addEventListener("click", rebuild);
-  $("remove-player-btn").addEventListener("click", removePlayer);
   $("solve-vs-btn").addEventListener("click", () => app.playHandWith(state.slug));
 
   return {
-    /** Show the screen, selecting ``slug`` (or keep the current / first player). */
+    /** Players tab: select ``slug`` (or the last friend shown, or the first). */
     async show(slug) {
-      const target = slug || state.slug || app.players[0]?.slug || null;
+      const target = slug || state.friendSlug || app.players[0]?.slug || null;
       if (target !== state.slug || !state.player) await select(target);
       else renderList();
+    },
+    /** Profile tab: your own notes and profile. */
+    async showSelf() {
+      if (!isSelf() || !state.player) await select(SELF);
     },
     flush: flushNotes,
   };

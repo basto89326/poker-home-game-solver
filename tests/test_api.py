@@ -104,3 +104,26 @@ def test_delete_player(client, tmp_path):
     assert client.get("/api/players").get_json() == []
     assert not (tmp_path / "notes" / "dave.md").exists()
     assert client.delete("/api/players/dave").status_code == 404
+
+
+def test_your_profile_endpoints(client):
+    assert client.get("/api/players").get_json() == []  # you're not listed as a friend
+    client.put("/api/players/you/notes", json={"notes": "I limp too much."})
+    assert client.get("/api/players/you").get_json()["notes"] == "I limp too much."
+    assert client.delete("/api/players/you").status_code == 400
+
+
+def test_your_seat_uses_your_profile_and_mode(client, tmp_path):
+    from src.profiler.store import PlayerStore
+
+    client.post("/api/players", json={"name": "Dave"})
+    mine = Profile.from_dict({
+        "name": "You", "archetype": "Nit",
+        "stats": {s: {"estimate": 0.1, "confidence": "high"} for s in STAT_DEFINITIONS},
+    })
+    PlayerStore(tmp_path).save_profile("you", mine)
+    seats = [{"player": "you"}, {"player": "dave"}]  # heads-up: you're the SB and act first
+    body = client.post("/api/hand", json={"seats": seats, "actions": [], "your_mode": "predicted"}).get_json()
+    analysis = body["analysis"]
+    assert analysis["is_you"] and analysis["mode"] == "predicted" and analysis["has_profile"]
+    assert analysis["profile"]["archetype"] == "Nit"

@@ -1,8 +1,8 @@
 """Hand play-through: replay the preflop actions so far and analyse the next decision.
 
-Every seat is either "you" or a player profile. Ranges start as every hand
-and are narrowed after each action using that seat's predicted play (your
-seat uses the placeholder default profile, because nobody has notes on you).
+Every seat is either "you" or a friend. Ranges start as every hand and are
+narrowed after each action using that seat's predicted play. Your seat uses
+your own profile (from the Profile tab), or placeholder defaults without one.
 """
 
 from __future__ import annotations
@@ -15,20 +15,22 @@ import numpy as np
 from ..engine.cards import class_names, combo_counts
 from ..engine.equity import load_preflop_equity
 from ..profiler.schema import Profile
+from ..profiler.store import SELF_SLUG
 from .bestplay import BestPlay, best_play, stable_seed
 from .predict import CALL, FOLD, RAISE, action_shares, predicted_strategy, update_range
 from .ranges import preflop_strength
 from .table import Action, BettingRound
 
-YOU = "you"
+YOU = SELF_SLUG
 MODES = ("predicted", "best")
+SOMETIMES = 0.05  # a predicted action this likely is mentioned as "sometimes"
 
 
 @dataclass
 class SeatSpec:
     player: str  # YOU or a player slug
     name: str
-    profile: Profile  # default profile for YOU or players without one
+    profile: Profile  # placeholder defaults if they have no AI profile yet
     has_profile: bool
     stack: float  # BB
 
@@ -130,8 +132,10 @@ def _predicted_why(hand: str, freqs: np.ndarray, in_range: bool, rule: str, name
     if not in_range:
         return f"{hand} isn't in {name}'s range any more after their earlier actions. {rule}"
     labels = ("fold", "check" if can_check else "call", "raise")
-    parts = [f"{labels[a]} {_pct(freqs[a])}" for a in (RAISE, CALL, FOLD) if freqs[a] > 0.005]
-    return f"{rule} So with {hand} they're predicted to {', '.join(parts)}."
+    likely = int(np.argmax(freqs))
+    others = [labels[a] for a in (RAISE, CALL, FOLD) if a != likely and freqs[a] >= SOMETIMES]
+    tail = f" (sometimes {' or '.join(others)}: {hand} sits on the edge of that group)" if others else ""
+    return f"{rule} So with {hand} they're most likely to {labels[likely]}{tail}."
 
 
 def _best_why(hand: str, cid: int, bp: BestPlay, can_check: bool, raise_to: float, money: _Money) -> str:
@@ -165,9 +169,13 @@ def _summary(freqs: np.ndarray, range_weights: np.ndarray) -> dict:
 
 
 def analyze(seats: list[SeatSpec], actions: list[Action], settings: GameSettings,
-            mode: str = "best", raise_to: float | None = None) -> dict:
-    """State of the hand plus the analysis for whoever acts next."""
-    if mode not in MODES:
+            mode: str = "best", raise_to: float | None = None, your_mode: str = "best") -> dict:
+    """State of the hand plus the analysis for whoever acts next.
+
+    ``mode`` applies on friends' turns and ``your_mode`` on yours; each is
+    "predicted" or "best".
+    """
+    if mode not in MODES or your_mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
     if sum(s.player == YOU for s in seats) != 1:
         raise ValueError("exactly one seat must be you")
@@ -183,7 +191,7 @@ def analyze(seats: list[SeatSpec], actions: list[Action], settings: GameSettings
 
     seat = seats[actor]
     if seat.player == YOU:
-        mode = "best"
+        mode = your_mode
     can_check = round_.to_call(actor) <= 1e-9
     size = raise_to if raise_to is not None else round_.default_raise_to(actor, settings.open_size)
     size = min(max(size, round_.min_raise_to(actor)), round_.max_raise_to(actor))

@@ -10,6 +10,9 @@ A notes file ``notes/<slug>.md`` looks like::
     - 2026-11-08: Called three streets with second pair.
 
 and the matching profile lives in ``profiles/<slug>.json``.
+
+Your own notes use the reserved slug :data:`SELF_SLUG` ("you"). They are
+stored the same way but never listed among your friends.
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ from pathlib import Path
 
 from .schema import Profile
 
+SELF_SLUG = "you"
+SELF_NAME = "You"
 SESSION_HEADING = "## Session notes"
 _SESSION_LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2}): (.+)$")
 
@@ -91,7 +96,15 @@ class PlayerStore:
         return self.profiles_dir / f"{slug}.json"
 
     def slugs(self) -> list[str]:
-        return sorted(p.stem for p in self.notes_dir.glob("*.md")) if self.notes_dir.exists() else []
+        """Your friends' slugs (your own notes are not included)."""
+        if not self.notes_dir.exists():
+            return []
+        return sorted(p.stem for p in self.notes_dir.glob("*.md") if p.stem != SELF_SLUG)
+
+    def ensure_self(self) -> None:
+        """Create your own (empty) notes file if it doesn't exist yet."""
+        if not self.exists(SELF_SLUG):
+            self.save_notes(SELF_SLUG, PlayerNotes(SELF_NAME))
 
     def exists(self, slug: str) -> bool:
         return self._notes_path(slug).exists()
@@ -109,6 +122,8 @@ class PlayerStore:
     def create(self, name: str) -> str:
         """Create an empty notes file for a new player; returns the slug."""
         slug = slugify(name)
+        if slug == SELF_SLUG:
+            raise ValueError(f"{name!r} is reserved for your own profile; pick another name")
         if self.exists(slug):
             raise ValueError(f"a player called {name!r} already exists")
         self.save_notes(slug, PlayerNotes(name.strip()))
@@ -116,6 +131,8 @@ class PlayerStore:
 
     def delete(self, slug: str) -> None:
         """Permanently remove a player's notes and profile."""
+        if slug == SELF_SLUG:
+            raise ValueError("your own profile can't be removed")
         if not self.exists(slug):
             raise KeyError(slug)
         self._notes_path(slug).unlink()

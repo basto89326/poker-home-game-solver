@@ -9,12 +9,14 @@ const COLUMN = { fold: 0, call: 1, raise: 2 }; // order of the API's frequency a
 const DISPLAY_ORDER = ["raise", "call", "fold"];
 const CSS_CLASS = { raise: "threebet", call: "call", fold: "fold" };
 const ACTOR_STATS = ["open_raise", "vpip", "three_bet", "call_open", "fold_to_3bet"];
+const SOMETIMES = 0.05; // predicted actions taken at least this often are tagged "Sometimes"
 
 export function createSolverView(app) {
   const state = {
     table: [], // [{player, stack}] with stack in dollars
     actions: [], // [{kind, to}] with "to" in big blinds
-    mode: "predicted",
+    mode: "predicted", // on friends' turns
+    yourMode: "best", // on your turn
     raiseTo: null, // big blinds; null = the server's default size
     result: null,
     selected: "AA",
@@ -96,7 +98,6 @@ export function createSolverView(app) {
   async function deal() {
     state.actions = [];
     state.raiseTo = null;
-    state.mode = "predicted";
     const error = await refresh();
     if (error) {
       showSetup(error);
@@ -119,6 +120,7 @@ export function createSolverView(app) {
         seats: state.table.map((s) => ({ player: s.player, stack: toBB(s.stack) })),
         actions: state.actions,
         mode: state.mode,
+        your_mode: state.yourMode,
         raise_to: state.raiseTo,
       });
       if (id !== state.requestId) return null; // a newer request has started
@@ -152,7 +154,7 @@ export function createSolverView(app) {
 
   function renderStatus() {
     $("grid-status").hidden = !state.loading;
-    $("grid-status").textContent = state.mode === "best" ? "Simulating\u2026" : "Working\u2026";
+    $("grid-status").textContent = state.result?.analysis?.mode === "best" ? "Simulating\u2026" : "Working\u2026";
     document.querySelectorAll("#action-card button").forEach((b) => { b.disabled = state.loading; });
   }
 
@@ -202,12 +204,14 @@ export function createSolverView(app) {
       return;
     }
     $("actor-title").textContent = `${analysis.position} \u00b7 ${analysis.name} to act`;
-    toggle.hidden = analysis.is_you;
+    toggle.hidden = false;
     toggle.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.mode === analysis.mode));
     $("legend-call").textContent = analysis.can_check ? "Check" : "Call";
     $("legend-close").hidden = analysis.mode !== "best";
+    const who = analysis.is_you ? "your" : `${analysis.name}'s`;
     $("mode-caption").textContent = analysis.mode === "predicted"
-      ? `Predicted: what ${analysis.name}'s profile says they'll do with each hand, given what they've done so far.`
+      ? `Predicted: what ${who} profile says ${analysis.is_you ? "you" : "they"}'ll do with each hand, `
+        + "given the action so far."
       : `Best play: the most profitable choice for ${analysis.is_you ? "you" : analysis.name} with each hand, `
         + "assuming everyone else plays "
         + "like their profile. Simulated with one round of responses (re-raises count as calls), hands scored by "
@@ -275,21 +279,20 @@ export function createSolverView(app) {
   function renderStats(analysis) {
     const profile = analysis.profile;
     const slug = state.table[analysis.seat].player;
-    $("stats-heading").textContent = analysis.is_you ? "You" : `${analysis.name}'s profile`;
-    $("edit-notes-link").hidden = analysis.is_you;
-    $("edit-notes-link").href = `#players/${encodeURIComponent(slug)}`;
-    $("actor-stats").replaceChildren(...(analysis.is_you ? [] : ACTOR_STATS.map((key) => {
+    $("stats-heading").textContent = analysis.is_you ? "Your profile" : `${analysis.name}'s profile`;
+    $("edit-notes-link").href = analysis.is_you ? "#profile" : `#players/${encodeURIComponent(slug)}`;
+    $("actor-stats").replaceChildren(...ACTOR_STATS.map((key) => {
       const stat = profile.stats[key];
       return el("div", { class: "stat-row" },
         el("span", { title: app.statDefinitions[key] ?? "" }, STAT_LABELS[key]),
         statBar(stat.estimate),
         el("span", { class: "value" }, pct(stat.estimate)),
         confidenceBadge(stat.confidence));
-    })));
+    }));
     let note = "";
-    if (analysis.is_you) {
-      note = "There are no notes on you. When others' best play is worked out, your range is narrowed "
-        + "using typical-player placeholder stats.";
+    if (analysis.is_you && !analysis.has_profile) {
+      note = "No profile for you yet, so these are placeholder 'typical player' stats. Add notes on the "
+        + "Profile tab and rebuild to use your own.";
     } else if (!analysis.has_profile) {
       note = `No AI profile for ${analysis.name} yet, so these are placeholder defaults.`;
     } else if (profile.summary) {
@@ -317,13 +320,19 @@ export function createSolverView(app) {
     const combos = { pair: 6, suited: 4, offsuit: 12 }[kind];
     $("hand-name").textContent = hand.name;
     $("hand-meta").textContent = `${combos} combos \u00b7 ${kind}`;
+    // One action per hand: "Best" (best play) or "Likely" (predicted), plus
+    // "Sometimes" for a predicted hand on the edge of two parts of their range.
+    const top = DISPLAY_ORDER.reduce((a, b) => (hand.freqs[COLUMN[b]] > hand.freqs[COLUMN[a]] ? b : a));
     $("hand-bars").replaceChildren(...DISPLAY_ORDER.map((action) => {
       const freq = hand.freqs[COLUMN[action]];
+      let tag = null;
+      if (action === top) tag = analysis.mode === "best" ? "Best" : "Likely";
+      else if (analysis.mode === "predicted" && freq >= SOMETIMES) tag = "Sometimes";
       const label = action === "call" && analysis.can_check ? "Check" : action[0].toUpperCase() + action.slice(1);
-      return el("div", { class: "hand-bar" },
+      return el("div", { class: `hand-action${tag ? " on" : ""}` },
+        el("i", { class: `swatch ${CSS_CLASS[action]}` }),
         el("span", {}, label),
-        el("div", { class: "bar" }, el("i", { class: CSS_CLASS[action], style: { width: pct(freq) } })),
-        el("span", { class: "value" }, pct(freq)));
+        tag ? el("span", { class: `tag${action === top ? "" : " secondary"}` }, tag) : null);
     }));
     $("hand-evs").textContent = hand.evs
       ? "Average result: " + DISPLAY_ORDER
@@ -365,7 +374,8 @@ export function createSolverView(app) {
   });
   $("deal-btn").addEventListener("click", deal);
   $("mode-toggle").querySelectorAll(".seg").forEach((b) => b.addEventListener("click", () => {
-    state.mode = b.dataset.mode;
+    if (state.result?.analysis?.is_you) state.yourMode = b.dataset.mode;
+    else state.mode = b.dataset.mode;
     refresh();
   }));
   $("action-buttons").querySelectorAll("button[data-kind]").forEach((b) => b.addEventListener("click", () => {

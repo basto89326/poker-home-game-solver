@@ -21,6 +21,7 @@
     <nav class="tabs" aria-label="Screens">
       <a href="#solver" class="tab" data-view="solver">Solver</a>
       <a href="#players" class="tab" data-view="players">Players</a>
+      <a href="#profile" class="tab" data-view="profile">Profile</a>
     </nav>
   </header>
 
@@ -152,8 +153,7 @@
 
       <div class="card notes-card">
         <h2 id="notes-heading" class="big-heading">Notes</h2>
-        <p class="muted">Write the way you'd describe them to a friend. The AI turns this into the
-          profile on the right.</p>
+        <p class="muted" id="notes-hint"></p>
         <label for="notes-text" class="field-label">All notes</label>
         <textarea id="notes-text" rows="12"></textarea>
         <div class="save-status muted" id="save-status" aria-live="polite"></div>
@@ -169,7 +169,6 @@
         <div class="rebuild-row">
           <button type="button" class="btn-primary" id="rebuild-btn">Rebuild profile with AI</button>
           <span id="profile-updated" class="muted"></span>
-          <button type="button" class="btn-danger" id="remove-player-btn">Remove player</button>
         </div>
         <p id="rebuild-error" class="error" hidden></p>
       </div>

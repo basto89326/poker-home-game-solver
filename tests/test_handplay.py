@@ -149,9 +149,12 @@ class TestAnalyze:
         with pytest.raises(ValueError, match="you"):
             analyze([seat("dave"), seat("sarah")], [], self.SETTINGS)
 
-    def test_your_seat_always_gets_best_play(self):
-        result = analyze([seat(YOU), seat("dave")], [], self.SETTINGS, mode="predicted")
+    def test_your_seat_has_its_own_mode(self):
+        seats = [seat(YOU), seat("dave")]
+        result = analyze(seats, [], self.SETTINGS, mode="predicted")
         assert result["analysis"]["is_you"] and result["analysis"]["mode"] == "best"
+        result = analyze(seats, [], self.SETTINGS, mode="best", your_mode="predicted")
+        assert result["analysis"]["mode"] == "predicted"
 
     def test_ranges_narrow_and_log_records_actions(self):
         seats = [seat("dave", open_raise=0.1), seat("sarah"), seat(YOU)]
