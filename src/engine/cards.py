@@ -119,12 +119,16 @@ def combo_name(combo: Combo) -> str:
     return card_str(a) + card_str(b)
 
 
-def combo_class(combo: Combo) -> int:
-    """Class id of a specific combo."""
-    a, b = sorted(combo, reverse=True)
-    row, col = 12 - a // 4, 12 - b // 4
-    if row == col:
-        return row * 13 + col
-    if a % 4 == b % 4:
-        return row * 13 + col  # suited: high rank is the row
-    return col * 13 + row  # offsuit: high rank is the column
+@lru_cache(maxsize=1)
+def combo_table() -> tuple[np.ndarray, np.ndarray]:
+    """Combos of every class padded to (169, 12, 2), plus the combo count per class.
+
+    Lets numpy pick random combos for many classes at once.
+    """
+    table = np.zeros((NUM_CLASSES, 12, 2), dtype=np.int64)
+    sizes = np.zeros(NUM_CLASSES, dtype=np.int64)
+    for cid, combos in enumerate(class_combos()):
+        table[cid, : len(combos)] = combos
+        sizes[cid] = len(combos)
+    table.setflags(write=False)
+    return table, sizes

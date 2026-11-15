@@ -1,7 +1,7 @@
 {
   "name": "Tom",
   "archetype": "Aggressive tilt-prone bluffer",
-  "summary": "Tom raises a lot preflop, keeps betting when checked to, bluffs more than anyone, and starts shoving light after losing a big pot.",
+  "summary": "Tom raises a lot preflop, keeps betting when checked to, bluffs more than anyone at the table, and starts shoving light after losing a big pot.",
   "stats": {
     "vpip": {
       "estimate": 0.4,
@@ -9,11 +9,19 @@
     },
     "pfr": {
       "estimate": 0.28,
-      "confidence": "medium"
+      "confidence": "high"
     },
     "open_raise": {
       "estimate": 0.5,
       "confidence": "medium"
+    },
+    "three_bet": {
+      "estimate": 0.1,
+      "confidence": "low"
+    },
+    "call_open": {
+      "estimate": 0.25,
+      "confidence": "low"
     },
     "fold_to_3bet": {
       "estimate": 0.45,
@@ -24,29 +32,28 @@
       "confidence": "low"
     },
     "aggression": {
-      "estimate": 0.65,
-      "confidence": "medium"
+      "estimate": 0.6,
+      "confidence": "high"
     },
     "river_bluff": {
       "estimate": 0.4,
-      "confidence": "medium"
+      "confidence": "high"
     }
   },
   "tendencies": [
     "Raises a lot preflop.",
     "Keeps betting when checked to.",
     "Bluffs more than anyone at the table.",
-    "Goes on tilt after losing one big pot."
+    "Goes on tilt after losing one big pot and starts shoving light."
   ],
   "modifiers": [
     {
       "condition": "After losing a big pot",
-      "description": "Tom tilts and starts shoving light, including frequent 3-bet shoves (4 of the next 10 hands in one session).",
+      "description": "Tom tilts and shoves light, including frequent 3-bet shoves (4 of the next 10 hands in one session).",
       "adjustments": {
         "vpip": 0.15,
         "pfr": 0.2,
-        "aggression": 0.15,
-        "river_bluff": 0.1
+        "three_bet": 0.3
       }
     }
   ],

@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..engine.cards import (NUM_CLASSES, RANKS, Combo, class_combos, class_compatibility,
-                            class_id, class_names, combo_counts)
+                            class_id, class_names)
 
 
 def _expand_token(token: str) -> list[str]:
@@ -58,26 +58,6 @@ def preflop_strength(equity: np.ndarray) -> np.ndarray:
     """Each class's all-in equity against a random hand (card removal included)."""
     compat = class_compatibility()
     return (equity * compat).sum(axis=1) / compat.sum(axis=1)
-
-
-def top_fraction(strength: np.ndarray, fraction: float) -> np.ndarray:
-    """Class weights for the strongest ``fraction`` of all 1326 combos.
-
-    The class on the boundary is included partially so the range holds
-    exactly that share of combos.
-    """
-    if not 0.0 <= fraction <= 1.0:
-        raise ValueError("fraction must be between 0 and 1")
-    counts = combo_counts()
-    weights = np.zeros(NUM_CLASSES)
-    remaining = fraction * counts.sum()
-    for cid in np.argsort(-strength, kind="stable"):
-        if remaining <= 0:
-            break
-        take = min(counts[cid], remaining)
-        weights[cid] = take / counts[cid]
-        remaining -= take
-    return weights
 
 
 def expand_to_combos(class_weights: np.ndarray, dead_cards: list[int]) -> tuple[list[Combo], np.ndarray]:

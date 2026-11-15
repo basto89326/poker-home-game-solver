@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ProcessPoolExecutor
-from functools import lru_cache
 from itertools import repeat
 from pathlib import Path
 
 import numpy as np
 
-from .cards import NUM_CLASSES, Combo, class_combos
+from .cards import NUM_CLASSES, Combo, combo_table
 from .evaluator import evaluate
 
 log = logging.getLogger(__name__)
@@ -26,21 +25,10 @@ SAMPLES_PER_MATCHUP = 2000  # ~1% standard error per matchup
 _SEED = 2026
 
 
-@lru_cache(maxsize=1)
-def _combo_table() -> tuple[np.ndarray, np.ndarray]:
-    """Combos padded to (169, 12, 2) plus the number of combos per class."""
-    table = np.zeros((NUM_CLASSES, 12, 2), dtype=np.int64)
-    sizes = np.zeros(NUM_CLASSES, dtype=np.int64)
-    for cid, combos in enumerate(class_combos()):
-        table[cid, : len(combos)] = combos
-        sizes[cid] = len(combos)
-    return table, sizes
-
-
 def _sample_row(i: int, samples: int, seed: int) -> np.ndarray:
     """Equity of class ``i`` against classes ``i..168`` (one Monte Carlo batch)."""
     rng = np.random.default_rng([seed, i])
-    table, sizes = _combo_table()
+    table, sizes = combo_table()
     others = np.repeat(np.arange(i, NUM_CLASSES), samples)
     hero = table[i, rng.integers(0, sizes[i], len(others))]
     villain = table[others, rng.integers(0, sizes[others])]

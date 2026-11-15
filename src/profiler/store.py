@@ -114,6 +114,13 @@ class PlayerStore:
         self.save_notes(slug, PlayerNotes(name.strip()))
         return slug
 
+    def delete(self, slug: str) -> None:
+        """Permanently remove a player's notes and profile."""
+        if not self.exists(slug):
+            raise KeyError(slug)
+        self._notes_path(slug).unlink()
+        self._profile_path(slug).unlink(missing_ok=True)
+
     def add_session_note(self, slug: str, text: str, date: str | None = None) -> PlayerNotes:
         text = " ".join(text.split())
         if not text:

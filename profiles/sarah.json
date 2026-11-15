@@ -1,23 +1,31 @@
 {
   "name": "Sarah",
-  "archetype": "Tight passive nit",
-  "summary": "Sarah plays few hands, mostly calls rather than raises, folds to pressure without a strong hand, and has never been seen bluffing the river.",
+  "archetype": "Tight passive",
+  "summary": "Sarah plays few hands, prefers calling to raising, folds to pressure without a strong hand and has never been seen bluffing the river.",
   "stats": {
     "vpip": {
-      "estimate": 0.16,
+      "estimate": 0.15,
       "confidence": "high"
     },
     "pfr": {
-      "estimate": 0.06,
+      "estimate": 0.05,
       "confidence": "medium"
     },
     "open_raise": {
+      "estimate": 0.1,
+      "confidence": "medium"
+    },
+    "three_bet": {
+      "estimate": 0.03,
+      "confidence": "medium"
+    },
+    "call_open": {
       "estimate": 0.12,
       "confidence": "medium"
     },
     "fold_to_3bet": {
       "estimate": 0.7,
-      "confidence": "medium"
+      "confidence": "high"
     },
     "fold_to_cbet": {
       "estimate": 0.6,
@@ -33,11 +41,11 @@
     }
   },
   "tendencies": [
-    "Only plays strong starting hands.",
-    "Prefers calling with good hands rather than raising.",
-    "Folds to aggression unless holding a strong hand.",
-    "Does not bluff the river.",
-    "Has folded decent hands like AQ to a 3-bet."
+    "Sarah only plays good hands.",
+    "They usually call with strong hands rather than raise.",
+    "They fold to aggression unless they hold something strong.",
+    "They have never been seen bluffing the river.",
+    "They will fold fairly strong hands like AQ to a 3-bet."
   ],
   "modifiers": [],
   "last_updated": "2026-11-15"

@@ -8,28 +8,21 @@ import { createSolverView } from "./solver.js";
 const app = {
   players: [],
   statDefinitions: {},
-  opponent: null,
-  spot: { opener: "CO", hero: "BTN", open_size: 2.5, three_bet_to: 8.5, stack: 100 },
+  config: null, // home-game settings in dollars, plus seat names by table size
 
+  /** Reload the player list (after adding, removing or renaming). */
   async refreshPlayers() {
     app.players = await api.players();
+    solverView?.playersChanged();
   },
-  playerName(slug) {
-    return app.players.find((p) => p.slug === slug)?.name ?? "";
-  },
-  setOpponent(slug) {
-    app.opponent = slug;
-    solverView.solve();
-  },
-  async solveAgainst(slug) {
+  async playHandWith(slug) {
     await playersView.flush();
-    app.opponent = slug;
+    solverView.seat(slug);
     location.hash = "#solver";
-    solverView.solve();
   },
 };
 
-const solverView = createSolverView(app);
+let solverView = null; // created once the config has loaded
 const playersView = createPlayersView(app);
 
 async function route() {
@@ -38,21 +31,20 @@ async function route() {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $("view-solver").hidden = name !== "solver";
   $("view-players").hidden = name !== "players";
-  $("spot-header").hidden = name !== "solver";
   if (name === "players") {
     await playersView.show(slug ? decodeURIComponent(slug) : null);
   } else {
     await playersView.flush();
-    solverView.render();
+    solverView.show();
   }
 }
 
 async function start() {
-  [app.statDefinitions] = await Promise.all([api.statDefinitions(), app.refreshPlayers()]);
-  app.opponent = app.players[0]?.slug ?? null;
+  [app.statDefinitions, app.config] = await Promise.all([api.statDefinitions(), api.config()]);
+  await app.refreshPlayers();
+  solverView = createSolverView(app);
   window.addEventListener("hashchange", route);
   await route();
-  solverView.solve();
 }
 
 start();

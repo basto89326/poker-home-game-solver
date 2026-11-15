@@ -58,15 +58,35 @@ def test_rebuild_profile_saves_result(client, monkeypatch):
     assert client.get("/api/players/dave").get_json()["profile"]["archetype"] == "Calling station"
 
 
-def test_preflop_uses_defaults_without_profile(client):
+def test_config_is_home_game(client):
+    body = client.get("/api/config").get_json()
+    assert {k: body[k] for k in ("small_blind", "big_blind", "open_size", "stack")} == {
+        "small_blind": 0.05, "big_blind": 0.10, "open_size": 0.50, "stack": 20.0}
+    assert body["positions"]["6"] == ["UTG", "HJ", "CO", "BTN", "SB", "BB"]
+
+
+def test_hand_play_through(client):
     client.post("/api/players", json={"name": "Dave"})
-    res = client.post("/api/solve/preflop", json={"opponent": "dave"})
-    body = res.get_json()
-    assert res.status_code == 200
-    assert body["using_defaults"] is True
-    assert len(body["exploit"]["hands"]) == 169
-    bad = client.post("/api/solve/preflop", json={"opponent": "dave", "hero": "UTG"})
-    assert bad.status_code == 400
+    seats = [{"player": "dave", "stack": 200}, {"player": "you", "stack": 200}]
+    body = client.post("/api/hand", json={"seats": seats, "actions": [], "mode": "predicted"}).get_json()
+    assert body["state"]["actor"] == 0  # heads-up: the small blind acts first
+    assert body["analysis"]["mode"] == "predicted"
+    assert body["analysis"]["has_profile"] is False  # no profile yet: placeholder defaults
+    done = client.post("/api/hand", json={"seats": seats, "actions": [{"kind": "fold"}]}).get_json()
+    assert done["state"]["complete"] and done["analysis"] is None
+
+
+@pytest.mark.parametrize("seats, actions", [
+    ([{"player": "dave"}, {"player": "dave"}], []),  # nobody is you
+    ([{"player": "you"}, {"player": "nobody"}], []),  # unknown player
+    ([{"player": "you"}, {"player": "dave"}], [{"kind": "check"}]),  # can't check facing the BB
+    ([{"player": "you"}, {"player": "dave"}], [{"to": 5}]),  # missing kind
+])
+def test_hand_rejects_bad_requests(client, seats, actions):
+    client.post("/api/players", json={"name": "Dave"})
+    res = client.post("/api/hand", json={"seats": seats, "actions": actions})
+    assert res.status_code in (400, 404)
+    assert "error" in res.get_json()
 
 
 def test_river_validation(client):
@@ -76,3 +96,11 @@ def test_river_validation(client):
         "board": "Ks7d2c9h3s", "hero_range": "AA", "villain_range": "KQ", "pot": 10, "stack": 20,
     }), content_type="application/json")
     assert res.status_code == 200
+
+
+def test_delete_player(client, tmp_path):
+    client.post("/api/players", json={"name": "Dave"})
+    assert client.delete("/api/players/dave").status_code == 204
+    assert client.get("/api/players").get_json() == []
+    assert not (tmp_path / "notes" / "dave.md").exists()
+    assert client.delete("/api/players/dave").status_code == 404

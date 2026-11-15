@@ -1,17 +1,25 @@
 {
   "name": "Priya",
   "archetype": "Tight newcomer",
-  "summary": "Priya is new to the game and seemed fairly tight in the one session played so far.",
+  "summary": "Priya is new to poker and seemed fairly tight in the one session seen so far.",
   "stats": {
     "vpip": {
       "estimate": 0.22,
-      "confidence": "medium"
+      "confidence": "low"
     },
     "pfr": {
       "estimate": 0.12,
       "confidence": "low"
     },
     "open_raise": {
+      "estimate": 0.25,
+      "confidence": "low"
+    },
+    "three_bet": {
+      "estimate": 0.06,
+      "confidence": "low"
+    },
+    "call_open": {
       "estimate": 0.25,
       "confidence": "low"
     },
@@ -33,8 +41,7 @@
     }
   },
   "tendencies": [
-    "Priya is new to the game, with only one session observed.",
-    "They seemed to play fairly tight, entering relatively few hands."
+    "They seemed to play fairly tight in their only observed session."
   ],
   "modifiers": [],
   "last_updated": "2026-11-15"

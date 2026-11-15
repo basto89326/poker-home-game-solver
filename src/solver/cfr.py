@@ -162,16 +162,3 @@ class CFRSolver:
         br = [self._values(self.root, self._ones(), player)[player].sum() / self.total_weight
               for player in (HERO, VILLAIN)]
         return (br[HERO] + br[VILLAIN] - self.start_pot) / 2
-
-    def root_action_values(self) -> np.ndarray:
-        """Expected value (BB) of each root action for each hand of the root player.
-
-        Rows for hands that never meet the other range are 0.
-        """
-        # A player's own reach does not affect their own counterfactual values,
-        # so every child can be evaluated with full reach.
-        p = self.root.player
-        reach = self._ones()
-        weight = self.joint @ reach[VILLAIN] if p == HERO else self.joint.T @ reach[HERO]
-        out = np.stack([self._values(child, reach, None)[p] for child in self.root.children], axis=1)
-        return np.where(weight[:, None] > 0, out / np.where(weight > 0, weight, 1)[:, None], 0.0)

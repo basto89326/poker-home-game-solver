@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home Game Solver</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/ui/styles.css">
   <script type="module" src="/ui/js/main.js"></script>
 </head>
@@ -21,82 +22,120 @@
       <a href="#solver" class="tab" data-view="solver">Solver</a>
       <a href="#players" class="tab" data-view="players">Players</a>
     </nav>
-    <div class="spot-header" id="spot-header" hidden>
-      <span id="spot-text" class="muted"></span>
-      <button type="button" class="btn" id="new-spot-btn">New spot</button>
-    </div>
   </header>
 
   <main>
-    <!-- Solver screen -->
-    <section id="view-solver" class="view solver" hidden>
-      <div class="solver-left">
-        <div class="grid-toolbar">
-          <div class="segmented" role="tablist" aria-label="Strategy">
-            <button type="button" class="seg active" data-mode="exploit" id="mode-exploit">Exploit</button>
-            <button type="button" class="seg" data-mode="baseline">GTO baseline</button>
+    <!-- Solver screen: table setup, then the seat-by-seat play-through -->
+    <section id="view-solver" class="view" hidden>
+      <div class="card setup" id="setup">
+        <div class="card-head">
+          <div>
+            <h2 class="big-heading">Who's in the hand?</h2>
+            <p class="muted">Seats are listed in preflop action order. One seat is you.</p>
           </div>
-          <div class="legend">
-            <span><i class="swatch threebet"></i>3-Bet</span>
-            <span><i class="swatch call"></i>Call</span>
-            <span><i class="swatch fold"></i>Fold</span>
-          </div>
+          <label class="inline-field">Players
+            <select id="seat-count" aria-label="Number of players"></select>
+          </label>
         </div>
-        <div class="grid-wrap card">
-          <div id="hand-grid" class="hand-grid" aria-label="Starting hands"></div>
-          <div id="grid-status" class="grid-status" hidden></div>
+        <div id="seat-rows" class="seat-rows"></div>
+        <p id="setup-error" class="error" hidden></p>
+        <div class="setup-actions">
+          <span id="blinds-text" class="muted"></span>
+          <button type="button" class="btn-primary" id="deal-btn">Deal hand</button>
         </div>
-        <p class="caption">
-          Click any hand to see how to play it and why. Top-right triangle = suited, bottom-left =
-          offsuit, diagonal = pairs.
-        </p>
-        <p class="caption">
-          Model: the opponent opens their strongest <em>open-raise</em> share of hands; players
-          still to act fold; hands that see a flop are scored by all-in equity (postflop play isn't
-          modelled yet); no 4-bets. <strong>GTO baseline</strong> is the equilibrium of this
-          simplified spot with the opponent defending against 3-bets perfectly.
-        </p>
       </div>
 
-      <aside class="solver-right">
-        <div class="card">
-          <div class="card-head">
-            <h2 id="opponent-heading">Opponent</h2>
-            <a href="#players" id="edit-notes-link" class="link">Edit notes</a>
+      <div id="play" class="solver" hidden>
+        <div class="solver-left">
+          <div class="grid-toolbar">
+            <h2 id="actor-title" class="actor-title"></h2>
+            <div class="segmented" id="mode-toggle" role="tablist" aria-label="What to show">
+              <button type="button" class="seg" data-mode="predicted">Predicted</button>
+              <button type="button" class="seg" data-mode="best">Best play</button>
+            </div>
+            <div class="legend">
+              <span><i class="swatch threebet"></i>Raise</span>
+              <span><i class="swatch call"></i><span id="legend-call">Call</span></span>
+              <span><i class="swatch fold"></i>Fold</span>
+              <span id="legend-close" title="Within the simulation's margin of error">~ Close call</span>
+            </div>
           </div>
-          <div id="opponent-picker" class="picker"></div>
-          <div id="opponent-stats" class="stat-rows"></div>
-          <p id="opponent-quote" class="quote"></p>
+          <div class="grid-wrap card">
+            <div id="hand-grid" class="hand-grid" aria-label="Starting hands"></div>
+            <div id="grid-status" class="grid-status" hidden></div>
+          </div>
+          <p id="mode-caption" class="caption"></p>
+          <p class="caption">
+            Click any hand to see how it's played and why. Top-right triangle = suited,
+            bottom-left = offsuit, diagonal = pairs. Faded hands are no longer in this player's
+            range after their earlier actions.
+          </p>
         </div>
 
-        <div class="card">
-          <div id="seats" class="seats"></div>
-          <div class="pot-line">
-            <span>Pot <strong id="pot"></strong></span>
-            <span>To call <strong id="to-call"></strong></span>
-            <span>Pot odds <strong id="pot-odds"></strong></span>
+        <aside class="solver-right">
+          <div class="card">
+            <div id="seats" class="seats"></div>
+            <div class="pot-line">
+              <span>Pot <strong id="pot"></strong></span>
+              <span>To call <strong id="to-call"></strong></span>
+              <span>Pot odds <strong id="pot-odds"></strong></span>
+            </div>
           </div>
-        </div>
 
-        <div class="card">
-          <h2 id="range-heading">Your whole range here</h2>
-          <div id="range-tiles" class="range-tiles"></div>
-          <div id="range-bar" class="range-bar"></div>
-        </div>
+          <div class="card" id="action-card">
+            <h2 id="action-heading"></h2>
+            <div id="action-buttons" class="action-buttons">
+              <button type="button" class="btn" data-kind="fold">Fold</button>
+              <button type="button" class="btn" data-kind="call" id="call-btn">Call</button>
+              <div class="raise-group">
+                <button type="button" class="btn act-raise" data-kind="raise" id="raise-btn">Raise to</button>
+                <span class="dollar">$</span>
+                <input id="raise-input" type="number" step="0.05" min="0" aria-label="Raise to (dollars)">
+              </div>
+            </div>
+            <p id="hand-over" class="hand-over" hidden></p>
+            <p id="action-error" class="error" hidden></p>
+            <div class="action-footer">
+              <button type="button" class="link-btn" id="undo-btn">Undo last action</button>
+              <button type="button" class="link-btn" id="redeal-btn">Restart hand</button>
+              <button type="button" class="link-btn" id="edit-table-btn">Change players</button>
+            </div>
+          </div>
 
-        <div class="card">
-          <div class="card-head">
-            <h2 id="hand-name" class="hand-name"></h2>
-            <span id="hand-meta" class="muted"></span>
+          <div class="card">
+            <h2>Action so far</h2>
+            <ol id="action-log" class="action-log"></ol>
           </div>
-          <div id="hand-bars" class="hand-bars"></div>
-          <div class="why">
-            <div class="why-label">Why</div>
-            <p id="hand-why"></p>
+
+          <div class="card">
+            <div class="card-head">
+              <h2 id="stats-heading"></h2>
+              <a href="#players" id="edit-notes-link" class="link">Edit notes</a>
+            </div>
+            <div id="actor-stats" class="stat-rows"></div>
+            <p id="actor-note" class="quote"></p>
           </div>
-          <p id="hand-compare" class="muted compare"></p>
-        </div>
-      </aside>
+
+          <div class="card">
+            <h2 id="range-heading"></h2>
+            <div id="range-tiles" class="range-tiles"></div>
+            <div id="range-bar" class="range-bar"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2 id="hand-name" class="hand-name"></h2>
+              <span id="hand-meta" class="muted"></span>
+            </div>
+            <div id="hand-bars" class="hand-bars"></div>
+            <p id="hand-evs" class="muted compare"></p>
+            <div class="why">
+              <div class="why-label">Why</div>
+              <p id="hand-why"></p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <!-- Players screen -->
@@ -130,6 +169,7 @@
         <div class="rebuild-row">
           <button type="button" class="btn-primary" id="rebuild-btn">Rebuild profile with AI</button>
           <span id="profile-updated" class="muted"></span>
+          <button type="button" class="btn-danger" id="remove-player-btn">Remove player</button>
         </div>
         <p id="rebuild-error" class="error" hidden></p>
       </div>
@@ -140,7 +180,7 @@
             <div class="eyebrow accent">AI profile</div>
             <h2 id="profile-archetype" class="big-heading"></h2>
           </div>
-          <button type="button" class="btn" id="solve-vs-btn">Solve vs</button>
+          <button type="button" class="btn" id="solve-vs-btn">Play a hand</button>
         </div>
         <div id="profile-empty" class="muted" hidden>
           No profile yet. Write some notes, then click <strong>Rebuild profile with AI</strong>.
@@ -156,20 +196,5 @@
     </section>
   </main>
 
-  <dialog id="spot-dialog">
-    <form method="dialog" id="spot-form" class="spot-form">
-      <h2>New spot</h2>
-      <label>Opener <select name="opener"></select></label>
-      <label>You are on <select name="hero"></select></label>
-      <label>Open size (BB) <input name="open_size" type="number" step="0.5" min="1.5" required></label>
-      <label>Your 3-bet to (BB) <input name="three_bet_to" type="number" step="0.5" min="3" required></label>
-      <label>Stacks (BB) <input name="stack" type="number" step="1" min="10" required></label>
-      <p id="spot-error" class="error" hidden></p>
-      <div class="dialog-actions">
-        <button type="button" class="btn" id="spot-cancel">Cancel</button>
-        <button type="submit" class="btn-primary" value="ok">Solve</button>
-      </div>
-    </form>
-  </dialog>
 </body>
 </html>

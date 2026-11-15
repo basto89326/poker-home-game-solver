@@ -38,13 +38,6 @@ class Node:
         for child in self.children:
             yield from child.walk()
 
-    def find(self, path: str) -> "Node":
-        """Return the node at ``path`` (e.g. ``"check/bet 75%"``)."""
-        for node in self.walk():
-            if node.path == path:
-                return node
-        raise KeyError(path)
-
 
 def _child_path(parent: str, action: str) -> str:
     return f"{parent}/{action}" if parent else action
@@ -54,38 +47,6 @@ def _add(invested: tuple[float, float], player: int, amount: float) -> tuple[flo
     out = list(invested)
     out[player] += amount
     return out[0], out[1]
-
-
-def build_preflop_tree(start_pot: float, to_call: float, three_bet_to: float,
-                       hero_already_in: float = 0.0) -> Node:
-    """Hero faces an open raise: fold, call or 3-bet; villain then folds or calls.
-
-    ``to_call`` is what hero must add to call; ``three_bet_to`` is the total
-    3-bet size and ``hero_already_in`` any blind hero posted before acting.
-    No 4-bets are modelled.
-    """
-    open_size = to_call + hero_already_in
-    raise_amount = three_bet_to - hero_already_in
-    villain_call = three_bet_to - open_size
-    if raise_amount <= to_call:
-        raise ValueError("3-bet size must be larger than the open")
-
-    def term(path: str, invested: tuple[float, float], folder: int | None = None) -> Node:
-        return Node(path, start_pot + sum(invested), invested, folder=folder)
-
-    called = _add((0.0, 0.0), HERO, to_call)
-    raised = _add((0.0, 0.0), HERO, raise_amount)
-    villain_node = Node(
-        "3bet", start_pot + raise_amount, raised, player=VILLAIN,
-        actions=["fold", "call"],
-        children=[term("3bet/fold", raised, folder=VILLAIN),
-                  term("3bet/call", _add(raised, VILLAIN, villain_call))],
-    )
-    return Node(
-        "", start_pot, (0.0, 0.0), player=HERO,
-        actions=["fold", "call", "3bet"],
-        children=[term("fold", (0.0, 0.0), folder=HERO), term("call", called), villain_node],
-    )
 
 
 def build_river_tree(start_pot: float, stack: float, first_to_act: int,

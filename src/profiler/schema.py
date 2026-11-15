@@ -17,7 +17,9 @@ STAT_DEFINITIONS: dict[str, str] = {
     "vpip": "Share of all hands where they voluntarily put money in preflop.",
     "pfr": "Share of all hands where they raise preflop.",
     "open_raise": "When everyone folds to them before the flop, how often they open with a raise.",
-    "fold_to_3bet": "After opening, how often they fold when re-raised (3-bet).",
+    "three_bet": "When someone has raised before them preflop, how often they re-raise (3-bet).",
+    "call_open": "When someone has raised before them preflop, how often they just call.",
+    "fold_to_3bet": "After putting in a raise or call preflop, how often they fold when re-raised.",
     "fold_to_cbet": "How often they fold when someone bets into them after the flop.",
     "aggression": ("Of their postflop actions other than checking, the share that are bets or "
                    "raises (not calls)."),
@@ -30,6 +32,8 @@ POPULATION_DEFAULTS: dict[str, float] = {
     "vpip": 0.40,
     "pfr": 0.12,
     "open_raise": 0.25,
+    "three_bet": 0.06,
+    "call_open": 0.25,
     "fold_to_3bet": 0.45,
     "fold_to_cbet": 0.45,
     "aggression": 0.30,
@@ -116,6 +120,8 @@ class Profile:
         stats = {s: Stat.from_dict(s, raw_stats[s]) for s in STAT_DEFINITIONS}
         if stats["pfr"].estimate > stats["vpip"].estimate:
             raise ProfileError("pfr cannot be higher than vpip")
+        if stats["three_bet"].estimate + stats["call_open"].estimate > 1:
+            raise ProfileError("three_bet + call_open cannot be more than 1")
         tendencies = data.get("tendencies") or []
         if not isinstance(tendencies, list) or not all(isinstance(t, str) for t in tendencies):
             raise ProfileError("'tendencies' must be a list of strings")

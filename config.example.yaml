@@ -10,5 +10,12 @@ claude:
   model:               # leave empty for Claude Code's default model
   timeout: 180         # seconds to wait for a profile
 
+# Your home game, in dollars. Used as the defaults for new hands.
+game:
+  small_blind: 0.05
+  big_blind: 0.10
+  open_size: 0.50    # usual open raise
+  stack: 20.00       # starting stack
+
 # Folder (relative to the project) that holds notes/ and profiles/
 # data_root: .

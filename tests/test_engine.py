@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from src.engine.cards import (NUM_CLASSES, class_combos, class_compatibility, class_id, class_name,
-                              combo_class, combo_counts, parse_board, parse_card)
+from src.engine.cards import (NUM_CLASSES, class_compatibility, class_id, class_name, combo_counts,
+                              parse_board, parse_card)
 from src.engine.equity import load_preflop_equity, showdown_share
 from src.engine.evaluator import (FLUSH, FULL_HOUSE, HIGH_CARD, PAIR, QUADS, STRAIGHT,
                                   STRAIGHT_FLUSH, TRIPS, TWO_PAIR, category_of, evaluate)
@@ -39,10 +39,6 @@ class TestCards:
         assert counts[class_id("AA")] == 6
         assert counts[class_id("AKs")] == 4
         assert counts[class_id("AKo")] == 12
-
-    def test_combo_class_inverts_class_combos(self):
-        for cid, combos in enumerate(class_combos()):
-            assert all(combo_class(c) == cid for c in combos)
 
     def test_compatibility(self):
         compat = class_compatibility()

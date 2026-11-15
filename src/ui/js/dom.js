@@ -27,6 +27,8 @@ export const STAT_LABELS = {
   vpip: "VPIP",
   pfr: "PFR",
   open_raise: "Open-raise",
+  three_bet: "3-bet",
+  call_open: "Call a raise",
   fold_to_3bet: "Fold to 3-bet",
   fold_to_cbet: "Fold to c-bet",
   aggression: "Aggression",

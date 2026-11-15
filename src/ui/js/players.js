@@ -13,7 +13,7 @@ export function createPlayersView(app) {
       "button",
       { type: "button", class: p.slug === state.slug ? "active" : null, onclick: () => select(p.slug) },
       el("strong", {}, p.name),
-      el("small", {}, `${p.archetype ?? "No profile yet"} · ${p.note_count} note${p.note_count === 1 ? "" : "s"}`),
+      el("small", {}, `${p.archetype ?? "No profile yet"} \u00b7 ${p.note_count} note${p.note_count === 1 ? "" : "s"}`),
     )));
   }
 
@@ -35,7 +35,7 @@ export function createPlayersView(app) {
 
   function renderProfile() {
     const { profile, name } = state.player;
-    $("solve-vs-btn").textContent = `Solve vs ${name}`;
+    $("solve-vs-btn").textContent = `Play a hand vs ${name}`;
     $("profile-empty").hidden = Boolean(profile);
     $("profile-body").hidden = !profile;
     $("profile-archetype").textContent = profile?.archetype ?? "";
@@ -63,8 +63,12 @@ export function createPlayersView(app) {
     await flushNotes();
     state.slug = slug;
     $("rebuild-error").hidden = true;
+    $("view-players").classList.toggle("empty", !slug);
     renderList();
-    if (!slug) return;
+    if (!slug) {
+      state.player = null;
+      return;
+    }
     try {
       state.player = await api.player(slug);
     } catch (err) {
@@ -83,7 +87,7 @@ export function createPlayersView(app) {
     const text = $("notes-text").value;
     if (!state.player || text === state.savedText) return;
     const slug = state.slug;
-    $("save-status").textContent = "Saving…";
+    $("save-status").textContent = "Saving\u2026";
     try {
       await api.saveNotes(slug, text);
       state.savedText = text;
@@ -140,7 +144,7 @@ export function createPlayersView(app) {
     const button = $("rebuild-btn");
     $("rebuild-error").hidden = true;
     button.disabled = true;
-    button.textContent = "Rebuilding… (about 20 s)";
+    button.textContent = "Rebuilding\u2026 (about 20 s)";
     try {
       await flushNotes();
       state.player.profile = await api.rebuildProfile(state.slug);
@@ -155,12 +159,30 @@ export function createPlayersView(app) {
     }
   }
 
+  async function removePlayer() {
+    const { name } = state.player;
+    const ok = window.confirm(`Remove ${name}? This permanently deletes their notes and profile.`);
+    if (!ok) return;
+    clearTimeout(state.saveTimer);
+    const slug = state.slug;
+    try {
+      await api.deletePlayer(slug);
+    } catch (err) {
+      showError(err.message);
+      return;
+    }
+    state.player = null; // nothing left to save
+    await app.refreshPlayers();
+    await select(app.players[0]?.slug ?? null);
+  }
+
   $("notes-text").addEventListener("input", scheduleSave);
   $("notes-text").addEventListener("blur", flushNotes);
   $("add-player-form").addEventListener("submit", addPlayer);
   $("session-form").addEventListener("submit", addSession);
   $("rebuild-btn").addEventListener("click", rebuild);
-  $("solve-vs-btn").addEventListener("click", () => app.solveAgainst(state.slug));
+  $("remove-player-btn").addEventListener("click", removePlayer);
+  $("solve-vs-btn").addEventListener("click", () => app.playHandWith(state.slug));
 
   return {
     /** Show the screen, selecting ``slug`` (or keep the current / first player). */

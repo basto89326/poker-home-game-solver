@@ -19,8 +19,10 @@ export const api = {
   statDefinitions: () => request("GET", "/api/stats"),
   player: (slug) => request("GET", playerUrl(slug)),
   createPlayer: (name) => request("POST", "/api/players", { name }),
+  deletePlayer: (slug) => request("DELETE", playerUrl(slug)),
   saveNotes: (slug, notes) => request("PUT", `${playerUrl(slug)}/notes`, { notes }),
   addSession: (slug, text) => request("POST", `${playerUrl(slug)}/sessions`, { text }),
   rebuildProfile: (slug) => request("POST", `${playerUrl(slug)}/profile`),
-  solvePreflop: (spot) => request("POST", "/api/solve/preflop", spot),
+  config: () => request("GET", "/api/config"),
+  hand: (body) => request("POST", "/api/hand", body),
 };

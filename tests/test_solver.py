@@ -1,14 +1,13 @@
 import numpy as np
 import pytest
 
-from src.engine.cards import class_id, combo_counts
+from src.engine.cards import class_id
 from src.profiler.schema import Stat, default_profile
 from src.solver.cfr import CFRSolver
 from src.solver.nodelock import NodeLock, lock_by_strength
-from src.solver.preflop import PreflopSpot, solve_spot
-from src.solver.ranges import parse_range, top_fraction
+from src.solver.ranges import parse_range
 from src.solver.river import RiverSpot, solve_river
-from src.solver.tree import HERO, VILLAIN, build_preflop_tree, build_river_tree
+from src.solver.tree import HERO, build_river_tree
 
 
 def polar_toy_game() -> tuple:
@@ -32,11 +31,6 @@ class TestRanges:
     def test_parse_rejects_bad_tokens(self, bad):
         with pytest.raises(ValueError):
             parse_range(bad)
-
-    def test_top_fraction_has_exact_combo_share(self):
-        strength = np.arange(169, 0, -1, dtype=float)
-        weights = top_fraction(strength, 0.25)
-        assert (weights * combo_counts()).sum() == pytest.approx(0.25 * 1326)
 
 
 class TestNodeLock:
@@ -78,50 +72,6 @@ class TestCFR:
         root, joint, share = polar_toy_game()
         with pytest.raises(KeyError):
             CFRSolver(root, joint, share, 1.0, {"nope": NodeLock.unlocked(1, 2)})
-
-    def test_preflop_tree_amounts(self):
-        root = build_preflop_tree(start_pot=4.0, to_call=2.5, three_bet_to=8.5)
-        assert root.find("call").pot == 6.5
-        assert root.find("3bet/call").invested == (8.5, 6.0)
-        assert root.find("3bet/fold").folder == VILLAIN
-
-
-@pytest.fixture(scope="module")
-def preflop_result():
-    profile = default_profile("Dave")
-    profile.stats["open_raise"] = Stat(0.4, "medium")
-    profile.stats["fold_to_3bet"] = Stat(0.3, "medium")
-    return solve_spot(PreflopSpot(), profile)
-
-
-class TestPreflop:
-    @pytest.fixture
-    def result(self, preflop_result):
-        return preflop_result
-
-    def test_spot_numbers(self, result):
-        spot = result["spot"]
-        assert spot["start_pot"] == 4.0
-        assert spot["to_call"] == 2.5
-        assert spot["pot_odds"] == pytest.approx(2.5 / 6.5, abs=1e-4)
-
-    def test_summary_covers_every_combo(self, result):
-        for mode in ("exploit", "baseline"):
-            total = sum(v["combos"] for v in result[mode]["summary"].values())
-            assert total == pytest.approx(1326, abs=0.5)
-
-    def test_obvious_hands(self, result):
-        hands = {h["name"]: h for h in result["exploit"]["hands"]}
-        assert hands["AA"]["freqs"]["fold"] == 0
-        assert hands["72o"]["freqs"]["fold"] == pytest.approx(1.0)
-
-    def test_lock_is_respected(self, result):
-        assert result["exploit"]["villain"]["fold_to_3bet"] == pytest.approx(0.3, abs=1e-3)
-        assert result["exploit"]["exploitability"] < 0.01
-
-    def test_invalid_spot(self):
-        with pytest.raises(ValueError):
-            PreflopSpot(opener="BTN", hero="CO").validate()
 
 
 class TestRiver:

@@ -12,8 +12,9 @@ from ..config import Config
 from ..profiler.builder import BuilderError, build_profile
 from ..profiler.schema import STAT_DEFINITIONS, Profile, ProfileError, default_profile
 from ..profiler.store import PlayerStore
-from ..solver.preflop import PreflopSpot, solve_spot
+from ..solver.handplay import YOU, GameSettings, SeatSpec, analyze
 from ..solver.river import RiverSpot, solve_river
+from ..solver.table import POSITIONS, Action
 
 UI_DIR = Path(__file__).resolve().parents[1] / "ui"
 
@@ -90,6 +91,12 @@ def create_app(config: Config) -> Flask:
             "profile": profile.to_dict() if profile else None,
         })
 
+    @app.delete("/api/players/<slug>")
+    def delete_player(slug: str):
+        require_player(slug)
+        store.delete(slug)
+        return "", 204
+
     @app.put("/api/players/<slug>/notes")
     def save_notes(slug: str):
         require_player(slug)
@@ -131,24 +138,46 @@ def create_app(config: Config) -> Flask:
 
     # ----- solver -------------------------------------------------------------
 
-    @app.post("/api/solve/preflop")
-    def preflop():
+    settings = GameSettings(small_blind=config.small_blind / config.big_blind,
+                            open_size=config.open_size / config.big_blind,
+                            big_blind_dollars=config.big_blind)
+
+    @app.get("/api/config")
+    def game_config():
+        """Home-game settings in dollars (the UI converts; the API works in big blinds)."""
+        return jsonify(small_blind=config.small_blind, big_blind=config.big_blind,
+                       open_size=config.open_size, stack=config.stack, positions=POSITIONS)
+
+    def seat_spec(raw: Any) -> SeatSpec:
+        if not isinstance(raw, dict):
+            abort(400, description="each seat must be an object")
+        player = str(raw.get("player", ""))
+        stack = float(raw.get("stack", config.stack / config.big_blind))
+        if player == YOU:
+            return SeatSpec(YOU, "You", default_profile("You"), False, stack)
+        require_player(player)
+        profile, using_defaults = profile_or_default(player)
+        return SeatSpec(player, profile.name, profile, not using_defaults, stack)
+
+    @app.post("/api/hand")
+    def hand():
+        """Replay a preflop hand (amounts in big blinds) and analyse the next decision."""
         body = _json_body()
-        slug = str(body.get("opponent", ""))
-        require_player(slug)
+        raw_seats, raw_actions = body.get("seats"), body.get("actions", [])
+        if not isinstance(raw_seats, list) or not isinstance(raw_actions, list):
+            abort(400, description="'seats' and 'actions' must be lists")
         try:
-            spot = PreflopSpot(
-                opener=str(body.get("opener", "CO")),
-                hero=str(body.get("hero", "BTN")),
-                open_size=float(body.get("open_size", 2.5)),
-                three_bet_to=float(body.get("three_bet_to", 8.5)),
-                stack=float(body.get("stack", 100)),
-            )
-            profile, using_defaults = profile_or_default(slug)
-            result = solve_spot(spot, profile)
-            return jsonify({**result, "profile": profile.to_dict(), "using_defaults": using_defaults})
-        except (TypeError, ValueError, ProfileError) as exc:
+            seats = [seat_spec(s) for s in raw_seats]
+            actions = [Action(str(a["kind"]), None if a.get("to") is None else float(a["to"]))
+                       for a in raw_actions]
+            raise_to = body.get("raise_to")
+            result = analyze(seats, actions, settings, mode=str(body.get("mode", "best")),
+                             raise_to=None if raise_to is None else float(raise_to))
+        except (KeyError, TypeError) as exc:
+            abort(400, description=f"malformed request: {exc}")
+        except (ValueError, ProfileError) as exc:
             abort(400, description=str(exc))
+        return jsonify(result)
 
     @app.post("/api/solve/river")
     def river():
