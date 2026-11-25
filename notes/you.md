@@ -1,4 +1,0 @@
-# You
-
-
-## Session notes

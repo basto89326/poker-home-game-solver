@@ -6,3 +6,7 @@ __pycache__/
 data/
 config.yaml
 .env
+
+# Player notes and profiles
+notes/
+profiles/
