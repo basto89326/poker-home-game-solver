@@ -132,18 +132,21 @@ main { padding: 20px 24px; }
 
 .hand-name { font-size: 24px; font-weight: 800; }
 .hand-bars { display: grid; gap: 4px; }
-.hand-action { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); }
+.hand-action {
+  display: grid; grid-template-columns: 12px 1fr auto minmax(56px, auto); align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px; color: var(--muted);
+}
+.hand-action > :last-child { justify-self: end; }
+.hand-action .ev { font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hand-action.on { color: var(--text); background: var(--panel-2); font-weight: 600; }
 .hand-action .tag {
-  margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
   background: var(--accent-bg); color: var(--accent);
 }
 .hand-action .tag.secondary { background: var(--bg); color: var(--muted); }
 .why { background: var(--panel-2); border-radius: 10px; padding: 12px 14px; margin-top: 14px; }
 .why-label { color: var(--accent); font-weight: 800; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
 .why p { margin: 6px 0 0; line-height: 1.55; }
-.compare { margin: 12px 0 0; }
-.compare strong { color: var(--text); }
 
 /* ----- players screen ----- */
 .players { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }

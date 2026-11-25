@@ -18,10 +18,10 @@ Simplifications (also shown in the UI):
 * Opponents' cards are dealt one player at a time, avoiding cards already
   dealt, which is a close (not exact) approximation of card removal.
 
-The best action is the one with the highest average result. Each average
-comes with its standard error; when the top two actions are within about two
-standard errors (a ~95% interval) the hand is marked *close*: the simulation
-can't reliably tell which is better.
+The best action is the one with the highest average result. When the top
+two averages are within ``CLOSE_BB`` (0.1 big blinds) of each other the hand
+is marked *close*: the choice barely matters. This is a fixed threshold, not
+a measure of the simulation's noise.
 """
 
 from __future__ import annotations
@@ -40,14 +40,14 @@ from .table import Action, BettingRound
 
 SAMPLES_PER_CLASS = 400
 _MAX_REDRAWS = 25
+CLOSE_BB = 0.1  # top two averages closer than this (in big blinds) count as a close call
 
 
 @dataclass
 class BestPlay:
     evs: np.ndarray  # (169, 3) average result in BB per action; NaN where not allowed
-    ev_error: np.ndarray  # (169, 3) standard error of each average
     strategy: np.ndarray  # (169, 3) 1 on the action with the best average
-    close: np.ndarray  # (169,) True where the top two actions are within the noise
+    close: np.ndarray  # (169,) True where the top two averages are within CLOSE_BB
     fold_equity: np.ndarray  # (169,) chance everyone folds to the raise
     called_share: np.ndarray  # (169,) average pot share when the raise is called
     call_share: np.ndarray  # (169,) average pot share when calling/checking reaches showdown
@@ -218,7 +218,6 @@ def best_play(round_: BettingRound, ranges: list[np.ndarray], profiles: list[Pro
 
     evs = np.full((NUM_CLASSES, 3), np.nan)
     evs[:, FOLD] = 0.0
-    ev_error = np.zeros((NUM_CLASSES, 3))
     shares: dict[int, np.ndarray] = {}
     fold_equity = np.zeros(NUM_CLASSES)
     trials = np.maximum(np.bincount(hero_class, weights=valid, minlength=NUM_CLASSES), 1)
@@ -230,8 +229,6 @@ def best_play(round_: BettingRound, ranges: list[np.ndarray], profiles: list[Pro
     for action, opt in options.items():
         outcome = _outcome(opt, deal, hero_score, opp_score, equity)
         evs[:, action] = per_class(outcome.result) / trials
-        mean_sq = per_class(outcome.result ** 2) / trials
-        ev_error[:, action] = np.sqrt(np.maximum(mean_sq - evs[:, action] ** 2, 0) / trials)
         shares[action] = per_class(outcome.called_share) / np.maximum(per_class(outcome.called), 1e-12)
         if action == RAISE:
             fold_equity = per_class(outcome.all_fold) / trials
@@ -240,12 +237,11 @@ def best_play(round_: BettingRound, ranges: list[np.ndarray], profiles: list[Pro
     rows = np.arange(NUM_CLASSES)
     order = np.argsort(np.where(np.isnan(evs), -np.inf, evs), axis=1)
     first, second = order[:, -1], order[:, -2]
-    noise = 2 * np.hypot(ev_error[rows, first], ev_error[rows, second])
-    close = evs[rows, first] - evs[rows, second] < noise
+    close = evs[rows, first] - evs[rows, second] < CLOSE_BB
     strategy = np.zeros((NUM_CLASSES, 3))
     strategy[rows, first] = 1.0
     raise_share = shares.get(RAISE, np.zeros(NUM_CLASSES))
-    return BestPlay(evs, ev_error, strategy, close, fold_equity, raise_share, shares[CALL])
+    return BestPlay(evs, strategy, close, fold_equity, raise_share, shares[CALL])
 
 
 def stable_seed(*parts: object) -> int:

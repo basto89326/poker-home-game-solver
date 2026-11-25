@@ -3,6 +3,10 @@
 Every seat is either "you" or a friend. Ranges start as every hand and are
 narrowed after each action using that seat's predicted play. Your seat uses
 your own profile (from the Profile tab), or placeholder defaults without one.
+
+Average results (EVs) come from the best-play simulation in both modes, so in
+predicted mode they show what each action would earn, not what the profile
+picks. Close calls are only flagged in best-play mode.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from ..engine.cards import class_names, combo_counts
 from ..engine.equity import load_preflop_equity
 from ..profiler.schema import Profile
 from ..profiler.store import SELF_SLUG
-from .bestplay import BestPlay, best_play, stable_seed
+from .bestplay import CLOSE_BB, BestPlay, best_play, stable_seed
 from .predict import CALL, FOLD, RAISE, action_shares, predicted_strategy, update_range
 from .ranges import preflop_strength
 from .table import Action, BettingRound
@@ -142,8 +146,8 @@ def _best_why(hand: str, cid: int, bp: BestPlay, can_check: bool, raise_to: floa
     evs = bp.evs[cid]
     call_word = "checking" if can_check else "calling"
     best = int(np.nanargmax(evs))
-    prefix = ("Close call: the difference is within the simulation's margin of error, so either "
-              "choice is reasonable. " if bp.close[cid] else "")
+    prefix = (f"Close call: the top two choices are within {CLOSE_BB:g} BB of each other, so either "
+              "is reasonable. " if bp.close[cid] else "")
     has_raise = not np.isnan(evs[RAISE])
     raise_text = f"raising to {money(raise_to)} averages {money(evs[RAISE], True)}" if has_raise else ""
     if best == RAISE:
@@ -198,24 +202,22 @@ def analyze(seats: list[SeatSpec], actions: list[Action], settings: GameSettings
     money = _Money(settings.big_blind_dollars)
     names = class_names()
     in_range = ranges[actor] > 0
+    seed = stable_seed([(s.player, s.stack) for s in seats], [(a.kind, a.to) for a in actions], size)
+    bp = best_play(round_, ranges, [s.profile for s in seats], load_preflop_equity(),
+                   size if round_.can_raise(actor) else None, seed=seed)
 
     if mode == "predicted":
         freqs = predicted_strategy(seat.profile, ranges[actor], _strength(), round_.raises, can_check)
         rule = _describe_rule(seat.profile, round_.raises)
-        hands = [{"name": n, "freqs": freqs[c].round(4).tolist(), "evs": None, "in_range": bool(in_range[c]),
-                  "close": False, "why": _predicted_why(n, freqs[c], in_range[c], rule, seat.name, can_check)}
-                 for c, n in enumerate(names)]
+        close = np.zeros(len(names), bool)
+        whys = [_predicted_why(n, freqs[c], in_range[c], rule, seat.name, can_check) for c, n in enumerate(names)]
     else:
-        seed = stable_seed([(s.player, s.stack) for s in seats], [(a.kind, a.to) for a in actions], size)
-        profiles = [s.profile for s in seats]
-        bp = best_play(round_, ranges, profiles, load_preflop_equity(),
-                       size if round_.can_raise(actor) else None, seed=seed)
-        freqs = bp.strategy
-        hands = [{"name": n, "freqs": freqs[c].tolist(),
-                  "evs": [None if np.isnan(v) else round(float(v), 3) for v in bp.evs[c]],
-                  "in_range": bool(in_range[c]), "close": bool(bp.close[c]),
-                  "why": _best_why(n, c, bp, can_check, size, money)}
-                 for c, n in enumerate(names)]
+        freqs, close = bp.strategy, bp.close
+        whys = [_best_why(n, c, bp, can_check, size, money) for c, n in enumerate(names)]
+    hands = [{"name": n, "freqs": freqs[c].round(4).tolist(),
+              "evs": [None if np.isnan(v) else round(float(v), 3) for v in bp.evs[c]],
+              "in_range": bool(in_range[c]), "close": bool(close[c]), "why": whys[c]}
+             for c, n in enumerate(names)]
 
     result["analysis"] = {
         "seat": actor,

@@ -69,13 +69,12 @@ Then open **http://127.0.0.1:5000** in your browser. Stop the app with `Ctrl+C`.
 
 ```
 KQs                                        4 combos - suited
-Raise 100%   Call 0%   Fold 0%
-Average result: Raise to $1.50 +$0.14 - Call $0.50 -$0.06 - Fold $0.00
+Raise to $1.50    +$0.14 (+1.40 BB)   Best
+Call $0.50       -$0.06 (-0.60 BB)
+Fold              $0.00 (0.00 BB)
 
-WHY  Close call: the difference is within the simulation's margin of error,
-     so either choice is reasonable. Raising to $1.50 averages +$0.14, vs
-     -$0.06 for calling. Everyone folds 18% of the time; when called, KQs wins
-     39% of the pot on average.
+WHY  Raising to $1.50 averages +$0.14, vs -$0.06 for calling. Everyone folds
+     18% of the time; when called, KQs wins 39% of the pot on average.
 ```
 
 ---
@@ -88,10 +87,10 @@ Everything runs in a local web app, so after installing you never need the comma
 - **Table setup:** choose how many players (2-9), who sits in each seat (you plus friends from your profiles) and each stack. Defaults come from your home game: $0.05/$0.10 blinds, $20 stacks.
 - **Seat by seat:** the screen shows the player to act. Pick their action (fold, check/call, or raise to an amount; the usual open of $0.50 and 3x re-raises are pre-filled) and it moves to the next seat until preflop is over. **Undo**, **Restart hand** and **Change players** are always there.
 - **Predicted / Best play toggle:** *Predicted* is what the player's profile says they'll do with each hand; *Best play* is the most profitable choice in their seat against everyone else's profiles. It works on your turn too (using your own profile), so you can compare your habits with the best play. Your turn starts on best play.
-- **13x13 hand grid** coloured by raise / call / fold. Hands a player can no longer have (given their earlier actions) are faded; close calls are marked with `~`.
+- **13x13 hand grid** coloured by raise / call / fold. Hands a player can no longer have (given their earlier actions) are faded; close calls (best two choices within 0.1 BB) are marked with `~` in best-play mode.
 - **Seats bar** with stacks, bets, pot, amount to call and pot odds, plus an **action log**.
 - **Profile panel** with the acting player's key preflop stats and confidence levels.
-- **Range summary** (how the player's whole range splits between actions) and a **hand panel** that names one action per hand (*Best*, or *Likely* / *Sometimes* for predicted play), with average results in dollars and a plain-English *why*.
+- **Range summary** (how the player's whole range splits between actions) and a **hand panel** that names one action per hand (*Best*, or *Likely* / *Sometimes* for predicted play), with each action's average result in dollars and big blinds (in both modes) and a plain-English *why*.
 
 ### Players screen
 - **Notes editor** for each friend (saves automatically), plus a log of short notes from each session
@@ -205,7 +204,7 @@ The reply is validated (ranges, required stats, PFR <= VPIP) before it is saved.
 
 ### Solver
 - **Predicted play (preflop):** each profile turns into shares of the player's *current* range by hand strength: with no raise yet, raise the top `open_raise` and limp up to `vpip`; facing a raise, re-raise `three_bet` and call `call_open`; facing a re-raise, fold `fold_to_3bet`. After every action the player's range is narrowed to the hands that would have taken it.
-- **Best play (preflop):** a Monte Carlo simulation (400 deals per hand) of every option against everyone else's predicted play. For each deal it averages exactly over who folds and who continues, and uses the exact equity table for heads-up showdowns, which removes most of the noise. Simplifications: one round of responses (re-raises count as calls), hands scored by all-in equity (no postflop play), no side pots. Decisions within the simulation's margin of error are marked as close calls.
+- **Best play (preflop):** a Monte Carlo simulation (400 deals per hand) of every option against everyone else's predicted play. For each deal it averages exactly over who folds and who continues, and uses the exact equity table for heads-up showdowns, which removes most of the noise. Simplifications: one round of responses (re-raises count as calls), hands scored by all-in equity (no postflop play), no side pots. Decisions where the best two choices are within 0.1 BB are marked as close calls (a fixed threshold, not the simulation's margin of error).
 - **River:** vectorised CFR+ on a heads-up check/bet/raise tree. With a profile, villain's facing-a-bet nodes are node-locked to fold the weakest `fold_to_cbet` share (a stand-in, since that stat is about flop c-bets), and the weaker half of villain's range bluffs at `river_bluff`; everything else re-optimises.
 - **Equity:** a cached 169x169 Monte Carlo table of preflop all-in equity (~1% error per matchup) and a vectorised 5-7 card hand evaluator.
 
@@ -235,7 +234,7 @@ The reply is validated (ranges, required stats, PFR <= VPIP) before it is saved.
 
 - **Garbage in, garbage out.** Profiles are only as good as your notes. Small samples and memory bias can produce confident-looking but wrong reads.
 - **The preflop model is simplified.** Best play treats every flop as an all-in (no postflop skill or position), so it favours raising when opponents fold often. Predicted play sorts hands by one strength number and ignores bet size and position. Use it to see *which direction* to adjust, not as exact frequencies.
-- **Best play is a simulation.** Results have a margin of error; hands marked `~` are too close to call.
+- **Best play is a simulation.** Results have a margin of error. Hands marked `~` have their best two choices within 0.1 BB, so the choice barely matters; a hand without `~` can still be within the noise.
 - **Exploits cut both ways.** A strategy built to beat one player can be badly exploitable if your read is off or they adjust.
 - **Full no-limit hold'em is huge.** Solutions use small trees and abstractions and are approximate.
 - **Friends adapt.** Reread and update profiles regularly.

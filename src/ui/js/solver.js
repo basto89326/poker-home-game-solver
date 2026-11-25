@@ -211,12 +211,13 @@ export function createSolverView(app) {
     const who = analysis.is_you ? "your" : `${analysis.name}'s`;
     $("mode-caption").textContent = analysis.mode === "predicted"
       ? `Predicted: what ${who} profile says ${analysis.is_you ? "you" : "they"}'ll do with each hand, `
-        + "given the action so far."
+        + "given the action so far. The amount next to each action is what it would win or lose on average, "
+        + "assuming everyone else plays like their profile."
       : `Best play: the most profitable choice for ${analysis.is_you ? "you" : analysis.name} with each hand, `
         + "assuming everyone else plays "
         + "like their profile. Simulated with one round of responses (re-raises count as calls), hands scored by "
-        + "all-in equity (no postflop play) and no side pots. ~ marks hands where the best two choices are within "
-        + "the simulation's margin of error.";
+        + "all-in equity (no postflop play) and no side pots. ~ marks close calls: the best two choices are within "
+        + "0.1 BB of each other.";
   }
 
   function renderSeats() {
@@ -328,19 +329,21 @@ export function createSolverView(app) {
       let tag = null;
       if (action === top) tag = analysis.mode === "best" ? "Best" : "Likely";
       else if (analysis.mode === "predicted" && freq >= SOMETIMES) tag = "Sometimes";
-      const label = action === "call" && analysis.can_check ? "Check" : action[0].toUpperCase() + action.slice(1);
+      const ev = hand.evs ? hand.evs[COLUMN[action]] : null;
       return el("div", { class: `hand-action${tag ? " on" : ""}` },
         el("i", { class: `swatch ${CSS_CLASS[action]}` }),
-        el("span", {}, label),
-        tag ? el("span", { class: `tag${action === top ? "" : " secondary"}` }, tag) : null);
+        el("span", {}, actionLabel(action, analysis)),
+        el("span", { class: "ev", title: "Average result" }, ev === null ? "" : evText(ev, action !== "fold")),
+        el("span", {}, tag ? el("span", { class: `tag${action === top ? "" : " secondary"}` }, tag) : null));
     }));
-    $("hand-evs").textContent = hand.evs
-      ? "Average result: " + DISPLAY_ORDER
-        .filter((action) => hand.evs[COLUMN[action]] !== null)
-        .map((action) => `${actionLabel(action, analysis)} ${money(hand.evs[COLUMN[action]], action !== "fold")}`)
-        .join(" \u00b7 ")
-      : "";
     $("hand-why").textContent = hand.why;
+  }
+
+  /** Average result in dollars and big blinds, e.g. "+$0.04 (+0.41 BB)". */
+  function evText(amountBB, signed) {
+    const rounded = Math.round(amountBB * 100) / 100 || 0; // "|| 0" turns -0 into 0, so no "-0.00 BB"
+    const sign = signed ? (rounded >= 0 ? "+" : "-") : "";
+    return `${money(rounded, signed)} (${sign}${Math.abs(rounded).toFixed(2)} BB)`;
   }
 
   function render() {

@@ -4,7 +4,7 @@ import pytest
 from src.engine.cards import class_id, combo_counts
 from src.engine.equity import load_preflop_equity
 from src.profiler.schema import Stat, default_profile
-from src.solver.bestplay import best_play
+from src.solver.bestplay import CLOSE_BB, best_play
 from src.solver.handplay import YOU, GameSettings, SeatSpec, analyze
 from src.solver.predict import CALL, FOLD, RAISE, predicted_strategy, update_range
 from src.solver.ranges import preflop_strength
@@ -126,7 +126,7 @@ class TestBestPlay:
         assert np.all(bp.strategy.sum(axis=1) == 1.0)
         ordered = np.sort(np.nan_to_num(bp.evs, nan=-np.inf), axis=1)
         gap = ordered[:, -1] - ordered[:, -2]
-        assert np.all(gap[~bp.close] > 0) and 0 < bp.close.sum() < 169
+        assert np.array_equal(bp.close, gap < CLOSE_BB) and 0 < bp.close.sum() < 169
         assert np.all(bp.evs[:, FOLD] == 0)
 
     def test_raising_into_a_folder_wins_the_pot(self, equity):
@@ -155,6 +155,12 @@ class TestAnalyze:
         assert result["analysis"]["is_you"] and result["analysis"]["mode"] == "best"
         result = analyze(seats, [], self.SETTINGS, mode="best", your_mode="predicted")
         assert result["analysis"]["mode"] == "predicted"
+
+    def test_predicted_mode_has_evs_but_no_close_calls(self):
+        result = analyze([seat(YOU), seat("dave")], [], self.SETTINGS, your_mode="predicted")
+        hands = result["analysis"]["hands"]
+        assert all(h["evs"][FOLD] == 0 and h["evs"][CALL] is not None for h in hands)
+        assert not any(h["close"] for h in hands)
 
     def test_ranges_narrow_and_log_records_actions(self):
         seats = [seat("dave", open_raise=0.1), seat("sarah"), seat(YOU)]
