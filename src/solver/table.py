@@ -1,7 +1,19 @@
-"""Preflop betting for a table of 2-9 players.
+"""Betting rounds (preflop, flop, turn, river) for a table of 2-9 players.
 
 Seats are listed in preflop action order (first to act ... SB, BB), so the
 index of a seat is also its position. Amounts are in big blinds.
+
+After the flop the first player still in the hand after the button acts
+first (the SB seat, or the BB heads-up), the minimum bet is one big blind,
+and a "raise" with no bet yet is a bet. Default sizes: preflop, the usual
+open or 3x the current bet; after the flop, a bet of ``POSTFLOP_BET`` x the
+pot or a raise to ``RAISE_MULTIPLE`` x the current bet.
+
+At the end of a hand, :func:`side_pots` splits the chips into a main pot and
+side pots (a player all-in for less can only win what they covered) and
+:func:`settle` pays each pot to the winners picked for it, split evenly in
+whole chips on a tie; an odd chip goes to the winner first to the left of
+the button.
 """
 
 from __future__ import annotations
@@ -20,6 +32,10 @@ POSITIONS: dict[int, tuple[str, ...]] = {
     9: ("UTG", "UTG+1", "UTG+2", "LJ", "HJ", "CO", "BTN", "SB", "BB"),
 }
 ACTION_KINDS = ("fold", "check", "call", "raise")
+STREETS = ("preflop", "flop", "turn", "river")
+BOARD_SIZE = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
+POSTFLOP_BET = 0.5  # default bet: half the pot
+RAISE_MULTIPLE = 3.0  # default raise: to 3x the current bet
 
 
 @dataclass
@@ -29,7 +45,10 @@ class Action:
 
 
 class BettingRound:
-    """One preflop betting round; :meth:`apply` validates every action."""
+    """One betting round; :meth:`apply` validates every action.
+
+    A new hand starts preflop; :meth:`next_street` starts the next round.
+    """
 
     def __init__(self, stacks: list[float], small_blind: float = 0.5, big_blind: float = 1.0) -> None:
         n = len(stacks)
@@ -38,8 +57,11 @@ class BettingRound:
         if any(s <= 0 for s in stacks):
             raise ValueError("every stack must be positive")
         self.positions = POSITIONS[n]
+        self.street = "preflop"
+        self.pot_before = 0.0  # chips from earlier streets
         self.big_blind = big_blind
-        self.start_stacks = [float(s) for s in stacks]
+        self.start_stacks = [float(s) for s in stacks]  # at the start of this street
+        self.hand_stacks = list(self.start_stacks)  # at the start of the hand
         self.bets = [0.0] * n
         self.folded = [False] * n
         self.acted = [False] * n
@@ -60,6 +82,10 @@ class BettingRound:
     def stack_left(self, seat: int) -> float:
         return self.start_stacks[seat] - self.bets[seat]
 
+    def invested(self, seat: int) -> float:
+        """Chips the seat has put in during the whole hand."""
+        return self.hand_stacks[seat] - self.stack_left(seat)
+
     def can_act(self, seat: int) -> bool:
         return not self.folded[seat] and self.stack_left(seat) > 1e-9
 
@@ -68,7 +94,7 @@ class BettingRound:
 
     @property
     def pot(self) -> float:
-        return sum(self.bets)
+        return self.pot_before + sum(self.bets)
 
     @property
     def complete(self) -> bool:
@@ -86,9 +112,19 @@ class BettingRound:
     def can_raise(self, seat: int) -> bool:
         return self.max_raise_to(seat) > self.highest + 1e-9
 
+    @property
+    def opening_bet(self) -> bool:
+        """True after the flop while nobody has bet yet (a raise here is a bet)."""
+        return self.street != "preflop" and self.highest <= 1e-9
+
     def default_raise_to(self, seat: int, open_size: float) -> float:
-        """Usual size: the standard open when unraised, otherwise 3x the current bet."""
-        target = open_size if self.raises == 0 else 3 * self.highest
+        """Usual size: see the module docstring."""
+        if self.opening_bet:
+            target = POSTFLOP_BET * self.pot
+        elif self.street == "preflop" and self.raises == 0:
+            target = open_size
+        else:
+            target = RAISE_MULTIPLE * self.highest
         return round(min(max(target, self.min_raise_to(seat)), self.max_raise_to(seat)), 2)
 
     # ----- actions ---------------------------------------------------------
@@ -142,8 +178,91 @@ class BettingRound:
         self.history.append((seat, action))
         self._advance(start=seat + 1)
 
+    def next_betting_street(self) -> str | None:
+        """The street that comes next if betting continues after this round, else None.
+
+        None when this is the river, only one player is left, or fewer than
+        two players have chips left to bet (the rest of the board just runs out).
+        """
+        if not self.complete or self.street == "river" or len(self.in_hand()) < 2:
+            return None
+        if sum(self.can_act(s) for s in self.in_hand()) < 2:
+            return None
+        return STREETS[STREETS.index(self.street) + 1]
+
+    def next_street(self) -> "BettingRound":
+        """A new round for the next street, carrying the pot, stacks and folds over."""
+        street = self.next_betting_street()
+        if street is None:
+            raise ValueError("there is no more betting in this hand")
+        n = len(self.bets)
+        nxt = copy.deepcopy(self)
+        nxt.street = street
+        nxt.pot_before = self.pot
+        nxt.start_stacks = [self.stack_left(i) for i in range(n)]
+        nxt.bets = [0.0] * n
+        nxt.acted = [False] * n
+        nxt.raises = 0
+        nxt.highest = 0.0
+        nxt.last_increment = self.big_blind
+        nxt.history = []
+        nxt._advance(start=1 if n == 2 else n - 2)  # heads-up the BB acts first after the flop
+        return nxt
+
     def after(self, action: Action) -> "BettingRound":
         """A copy of this round with ``action`` applied (for looking ahead)."""
         clone = copy.deepcopy(self)
         clone.apply(action)
         return clone
+
+
+def side_pots(invested: list[float], folded: list[bool]) -> list[tuple[float, list[int]]]:
+    """Split the chips into pots: [(amount, seats that can win it)], main pot first.
+
+    Each pot is a layer up to the next all-in amount of a player still in the
+    hand; folded players' chips go into the layers they reached. A pot with
+    one eligible seat is an uncalled bet that goes back to that player.
+    """
+    live = [i for i, f in enumerate(folded) if not f]
+    if not live:
+        raise ValueError("someone must still be in the hand")
+    levels = sorted({invested[i] for i in live})
+    result: list[tuple[float, list[int]]] = []
+    previous = 0.0
+    for level in levels:
+        amount = sum(min(max(c - previous, 0.0), level - previous) for c in invested)
+        eligible = [i for i in live if invested[i] >= level - 1e-9]
+        if amount > 1e-9:
+            result.append((amount, eligible))
+        previous = level
+    # Chips a folded player put in above every live player's total go to the last pot.
+    extra = sum(max(c - previous, 0.0) for c in invested)
+    if extra > 1e-9:
+        amount, eligible = result[-1] if result else (0.0, [live[-1]])
+        result[-1:] = [(amount + extra, eligible)]
+    return result
+
+
+def settle(pots: list[tuple[float, list[int]]], winners: list[list[int]], seats: int,
+           chip: float) -> list[float]:
+    """Amount each seat wins: every pot is split evenly between its ``winners``.
+
+    Pots are paid in whole chips of size ``chip``; odd chips go to the winners
+    nearest the left of the button (the post-flop acting order). A pot with
+    one eligible seat goes to that seat whatever ``winners`` says.
+    """
+    if len(winners) != len(pots):
+        raise ValueError(f"pick the winners of each of the {len(pots)} pots")
+    first = 1 if seats == 2 else seats - 2  # first seat to the left of the button
+    order = [(first + k) % seats for k in range(seats)]
+    payouts = [0.0] * seats
+    for number, ((amount, eligible), picked) in enumerate(zip(pots, winners), start=1):
+        picked = list(eligible) if len(eligible) == 1 else sorted(set(picked))
+        if not picked:
+            raise ValueError(f"pot {number} needs at least one winner")
+        if any(seat not in eligible for seat in picked):
+            raise ValueError(f"pot {number} can only be won by a player who put chips in it and didn't fold")
+        share, odd = divmod(round(amount / chip), len(picked))
+        for k, seat in enumerate(sorted(picked, key=order.index)):
+            payouts[seat] += (share + (1 if k < odd else 0)) * chip
+    return payouts

@@ -39,6 +39,7 @@
           </label>
         </div>
         <div id="seat-rows" class="seat-rows"></div>
+        <p id="setup-note" class="setup-note" hidden></p>
         <p id="setup-error" class="error" hidden></p>
         <div class="setup-actions">
           <span id="blinds-text" class="muted"></span>
@@ -55,7 +56,7 @@
               <button type="button" class="seg" data-mode="best">Best play</button>
             </div>
             <div class="legend">
-              <span><i class="swatch threebet"></i>Raise</span>
+              <span><i class="swatch threebet"></i><span id="legend-raise">Raise</span></span>
               <span><i class="swatch call"></i><span id="legend-call">Call</span></span>
               <span><i class="swatch fold"></i>Fold</span>
               <span id="legend-close" title="The best two choices are within 0.1 BB of each other">~ Close call</span>
@@ -69,13 +70,14 @@
           <p class="caption">
             Click any hand to see how it's played and why. Top-right triangle = suited,
             bottom-left = offsuit, diagonal = pairs. Faded hands are no longer in this player's
-            range after their earlier actions.
+            range after their earlier actions, or the board uses their cards.
           </p>
         </div>
 
         <aside class="solver-right">
           <div class="card">
             <div id="seats" class="seats"></div>
+            <div id="board" class="board" aria-label="Board" hidden></div>
             <div class="pot-line">
               <span>Pot <strong id="pot"></strong></span>
               <span>To call <strong id="to-call"></strong></span>
@@ -87,7 +89,7 @@
             <h2 id="action-heading"></h2>
             <div id="action-buttons" class="action-buttons">
               <button type="button" class="btn" data-kind="fold">Fold</button>
-              <button type="button" class="btn" data-kind="call" id="call-btn">Call</button>
+              <button type="button" class="btn act-call" data-kind="call" id="call-btn">Call</button>
               <div class="raise-group">
                 <button type="button" class="btn act-raise" data-kind="raise" id="raise-btn">Raise to</button>
                 <span class="dollar">$</span>
@@ -95,6 +97,17 @@
               </div>
             </div>
             <p id="hand-over" class="hand-over" hidden></p>
+            <div id="showdown" class="showdown" hidden>
+              <div id="pot-winners" class="pot-winners"></div>
+              <button type="button" class="btn-primary" id="next-hand-btn">Next hand</button>
+            </div>
+            <div id="board-picker" class="board-picker" hidden>
+              <div id="card-picker" class="card-picker" aria-label="Choose board cards"></div>
+              <div class="picker-actions">
+                <span id="picker-chosen" class="muted"></span>
+                <button type="button" class="btn-primary" id="deal-street-btn">Deal</button>
+              </div>
+            </div>
             <p id="action-error" class="error" hidden></p>
             <div class="action-footer">
               <button type="button" class="link-btn" id="undo-btn">Undo last action</button>

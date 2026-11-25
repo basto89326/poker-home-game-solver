@@ -9,6 +9,7 @@ from typing import Any
 from flask import Flask, abort, jsonify, request, send_from_directory
 
 from ..config import Config
+from ..engine.cards import parse_card
 from ..profiler.builder import BuilderError, build_profile
 from ..profiler.schema import STAT_DEFINITIONS, Profile, ProfileError, default_profile
 from ..profiler.store import PlayerStore
@@ -24,6 +25,15 @@ def _json_body() -> dict[str, Any]:
     if not isinstance(body, dict):
         abort(400, description="expected a JSON object")
     return body
+
+
+def _winners(raw: Any) -> list[list[int]] | None:
+    """Winning seat numbers for each pot, or None when not given."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(pot, list) for pot in raw):
+        raise ValueError("'winners' must be a list of seat lists, one per pot")
+    return [[int(seat) for seat in pot] for pot in raw]
 
 
 def create_app(config: Config) -> Flask:
@@ -164,11 +174,12 @@ def create_app(config: Config) -> Flask:
 
     @app.post("/api/hand")
     def hand():
-        """Replay a preflop hand (amounts in big blinds) and analyse the next decision."""
+        """Replay a hand (amounts in big blinds, board as cards like "As") and analyse the next decision."""
         body = _json_body()
         raw_seats, raw_actions = body.get("seats"), body.get("actions", [])
-        if not isinstance(raw_seats, list) or not isinstance(raw_actions, list):
-            abort(400, description="'seats' and 'actions' must be lists")
+        raw_board = body.get("board", [])
+        if not all(isinstance(x, list) for x in (raw_seats, raw_actions, raw_board)):
+            abort(400, description="'seats', 'actions' and 'board' must be lists")
         try:
             seats = [seat_spec(s) for s in raw_seats]
             actions = [Action(str(a["kind"]), None if a.get("to") is None else float(a["to"]))
@@ -176,7 +187,9 @@ def create_app(config: Config) -> Flask:
             raise_to = body.get("raise_to")
             result = analyze(seats, actions, settings, mode=str(body.get("mode", "best")),
                              your_mode=str(body.get("your_mode", "best")),
-                             raise_to=None if raise_to is None else float(raise_to))
+                             raise_to=None if raise_to is None else float(raise_to),
+                             board=[parse_card(str(card)) for card in raw_board],
+                             winners=_winners(body.get("winners")))
         except (KeyError, TypeError) as exc:
             abort(400, description=f"malformed request: {exc}")
         except (ValueError, ProfileError) as exc:

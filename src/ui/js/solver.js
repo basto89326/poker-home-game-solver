@@ -1,4 +1,5 @@
-// Solver screen: choose who's in the hand, then play preflop seat by seat.
+// Solver screen: choose who's in the hand, then play it seat by seat and street by street
+// (picking the flop, turn and river cards in between).
 // The API works in big blinds; everything shown here is in dollars.
 
 import { api } from "./api.js";
@@ -8,13 +9,22 @@ const YOU = "you";
 const COLUMN = { fold: 0, call: 1, raise: 2 }; // order of the API's frequency arrays
 const DISPLAY_ORDER = ["raise", "call", "fold"];
 const CSS_CLASS = { raise: "threebet", call: "call", fold: "fold" };
-const ACTOR_STATS = ["open_raise", "vpip", "three_bet", "call_open", "fold_to_3bet"];
+const ACTOR_STATS = {
+  preflop: ["open_raise", "vpip", "three_bet", "call_open", "fold_to_3bet"],
+  postflop: ["aggression", "fold_to_cbet", "river_bluff"],
+};
+const SUIT_SYMBOL = { c: "\u2663", d: "\u2666", h: "\u2665", s: "\u2660" };
+const PICKER_SUITS = ["s", "h", "d", "c"];
+const PICKER_RANKS = "AKQJT98765432";
 const SOMETIMES = 0.05; // predicted actions taken at least this often are tagged "Sometimes"
 
 export function createSolverView(app) {
   const state = {
     table: [], // [{player, stack}] with stack in dollars
     actions: [], // [{kind, to}] with "to" in big blinds
+    boardSteps: [], // [{cards, at}]: board cards dealt once `at` actions had been taken
+    picked: [], // cards chosen in the picker but not dealt yet
+    winners: [], // once the hand is over: the seats picked as winners of each pot
     mode: "predicted", // on friends' turns
     yourMode: "best", // on your turn
     raiseTo: null, // big blinds; null = the server's default size
@@ -28,7 +38,9 @@ export function createSolverView(app) {
   // ----- money -----
 
   const bb = () => app.config.big_blind;
-  const toBB = (dollars) => dollars / bb();
+  // Every amount is a whole number of the smallest chip, the small blind ($0.05).
+  const toChips = (dollars) => Math.round(dollars / app.config.small_blind) * app.config.small_blind;
+  const toBB = (dollars) => toChips(dollars) / bb();
   function money(amountBB, signed = false) {
     const dollars = amountBB * bb();
     const text = `$${Math.abs(dollars).toFixed(2)}`;
@@ -68,7 +80,10 @@ export function createSolverView(app) {
       el("label", {}, "$", el("input", {
         type: "number", step: "0.05", min: "0.10", value: state.table[i].stack,
         "aria-label": `Stack for ${position} in dollars`,
-        onchange: (e) => { state.table[i].stack = Number(e.target.value); },
+        onchange: (e) => {
+          state.table[i].stack = Number(toChips(Number(e.target.value)).toFixed(2));
+          e.target.value = state.table[i].stack;
+        },
       })),
     )));
     const c = app.config;
@@ -81,9 +96,11 @@ export function createSolverView(app) {
       && state.table.every((s) => s.player === YOU || app.players.some((p) => p.slug === s.player));
   }
 
-  function showSetup(message = null) {
+  function showSetup(message = null, note = null) {
     if (!tableIsValid()) state.table = app.players.length ? defaultTable(maxSeats()) : [];
     $("setup").hidden = false;
+    $("setup-note").hidden = !note;
+    $("setup-note").textContent = note ?? "";
     $("play").hidden = true;
     $("setup-error").hidden = !message;
     $("setup-error").textContent = message ?? "";
@@ -97,6 +114,8 @@ export function createSolverView(app) {
 
   async function deal() {
     state.actions = [];
+    state.boardSteps = [];
+    state.picked = [];
     state.raiseTo = null;
     const error = await refresh();
     if (error) {
@@ -109,6 +128,17 @@ export function createSolverView(app) {
 
   // ----- talking to the server -----
 
+  function handRequest() {
+    return {
+      seats: state.table.map((s) => ({ player: s.player, stack: toBB(s.stack) })),
+      actions: state.actions,
+      board: board(),
+      mode: state.mode,
+      your_mode: state.yourMode,
+      raise_to: state.raiseTo,
+    };
+  }
+
   /** Re-analyse the hand; returns an error message or null. */
   async function refresh() {
     const id = ++state.requestId;
@@ -116,15 +146,11 @@ export function createSolverView(app) {
     renderStatus();
     let error = null;
     try {
-      const result = await api.hand({
-        seats: state.table.map((s) => ({ player: s.player, stack: toBB(s.stack) })),
-        actions: state.actions,
-        mode: state.mode,
-        your_mode: state.yourMode,
-        raise_to: state.raiseTo,
-      });
+      const result = await api.hand(handRequest());
       if (id !== state.requestId) return null; // a newer request has started
       state.result = result;
+      // A pot only one player can win needs no choice.
+      state.winners = (result.state.pots ?? []).map((pot) => (pot.eligible.length === 1 ? [...pot.eligible] : []));
       render();
     } catch (err) {
       if (id !== state.requestId) return null;
@@ -145,6 +171,59 @@ export function createSolverView(app) {
     }
   }
 
+  async function dealStreet() {
+    state.boardSteps.push({ cards: [...state.picked], at: state.actions.length });
+    state.picked = [];
+    const error = await refresh();
+    if (error) {
+      state.picked = state.boardSteps.pop().cards;
+      renderPicker();
+      showActionError(error);
+    }
+  }
+
+  function undo() {
+    const last = state.boardSteps.at(-1);
+    if (last && last.at === state.actions.length) state.boardSteps.pop();
+    else state.actions.pop();
+    state.picked = [];
+    state.raiseTo = null;
+    refresh();
+  }
+
+  const board = () => state.boardSteps.flatMap((step) => step.cards);
+
+  /** Pay out the pots to the chosen winners, then set up the next hand (button moved on). */
+  async function nextHand() {
+    const seats = state.result.state.seats;
+    $("next-hand-btn").disabled = true; // no double clicks: each would move the button again
+    let settlement;
+    try {
+      settlement = (await api.hand({ ...handRequest(), winners: state.winners })).settlement;
+    } catch (err) {
+      showActionError(err.message);
+      renderStatus();
+      return;
+    }
+    const toDollars = (amountBB) => Number(toChips(amountBB * bb()).toFixed(2));
+    const results = seats
+      .map((seat, i) => ({ name: seat.name, won: toDollars(settlement.payouts[i]) }))
+      .filter((r) => r.won > 0)
+      .map((r) => `${r.name} won $${r.won.toFixed(2)}`);
+    const table = state.table.map((s, i) => ({ player: s.player, stack: toDollars(settlement.stacks[i]) }));
+    // The button moves one seat: everyone shifts one position (last hand's SB is the new BTN).
+    state.table = [...table.slice(1), table[0]];
+    state.result = null;
+    const broke = state.table.filter((s) => s.stack <= 0).map((s) => nameOf(s.player));
+    const note = `${results.join(", ")}. Stacks are updated and everyone has moved one seat (the button `
+      + "passed on). Check the stacks, then deal the next hand."
+      + (broke.length ? ` ${broke.join(" and ")} ${broke.length === 1 ? "is" : "are"} out of chips: `
+        + "enter a rebuy amount or change the seat." : "");
+    showSetup(null, note);
+  }
+
+  const nameOf = (slug) => (slug === YOU ? "You" : app.players.find((p) => p.slug === slug)?.name ?? slug);
+
   function showActionError(message) {
     $("action-error").textContent = message ?? "";
     $("action-error").hidden = !message;
@@ -155,7 +234,46 @@ export function createSolverView(app) {
   function renderStatus() {
     $("grid-status").hidden = !state.loading;
     $("grid-status").textContent = state.result?.analysis?.mode === "best" ? "Simulating\u2026" : "Working\u2026";
-    document.querySelectorAll("#action-card button").forEach((b) => { b.disabled = state.loading; });
+    document.querySelectorAll("#action-buttons button, .action-footer button").forEach((b) => {
+      b.disabled = state.loading;
+    });
+    $("deal-street-btn").disabled = state.loading || state.picked.length !== cardsNeeded();
+    $("next-hand-btn").disabled = state.loading || state.winners.some((w) => w.length === 0);
+  }
+
+  // ----- board cards -----
+
+  const cardsNeeded = () => state.result?.state.cards_needed ?? 0;
+  const cardText = (card) => `${card[0]}${SUIT_SYMBOL[card[1]]}`;
+
+  function cardChip(card) {
+    return el("span", { class: `playing-card suit-${card[1]}` }, cardText(card));
+  }
+
+  function renderPicker() {
+    const hand = state.result.state;
+    const used = new Set(hand.board);
+    const needed = cardsNeeded();
+    $("card-picker").replaceChildren(...PICKER_SUITS.flatMap((suit) => [...PICKER_RANKS].map((rank) => {
+      const card = rank + suit;
+      const picked = state.picked.includes(card);
+      return el("button", {
+        type: "button",
+        class: `pick-card suit-${suit}${picked ? " picked" : ""}`,
+        disabled: used.has(card),
+        "aria-pressed": String(picked),
+        onclick: () => togglePick(card),
+      }, cardText(card));
+    })));
+    $("picker-chosen").textContent = `${state.picked.length} of ${needed} chosen`;
+    $("deal-street-btn").textContent = `Deal the ${hand.needs_street}`;
+    $("deal-street-btn").disabled = state.loading || state.picked.length !== needed;
+  }
+
+  function togglePick(card) {
+    if (state.picked.includes(card)) state.picked = state.picked.filter((c) => c !== card);
+    else if (state.picked.length < cardsNeeded()) state.picked.push(card);
+    renderPicker();
   }
 
   function buildGrid() {
@@ -178,7 +296,7 @@ export function createSolverView(app) {
   }
 
   function actionLabel(action, analysis) {
-    if (action === "raise") return `Raise to ${money(analysis.raise_to)}`;
+    if (action === "raise") return `${analysis.opening_bet ? "Bet" : "Raise to"} ${money(analysis.raise_to)}`;
     if (action === "call") return analysis.can_check ? "Check" : `Call ${money(state.result.state.legal.to_call)}`;
     return "Fold";
   }
@@ -198,15 +316,18 @@ export function createSolverView(app) {
   function renderHeader(analysis) {
     const toggle = $("mode-toggle");
     if (!analysis) {
-      $("actor-title").textContent = "Preflop is over";
+      const street = state.result.state.needs_street;
+      $("actor-title").textContent = street ? `Choose the ${street}` : "Hand over";
       toggle.hidden = true;
       $("mode-caption").textContent = "";
       return;
     }
-    $("actor-title").textContent = `${analysis.position} \u00b7 ${analysis.name} to act`;
+    const street = analysis.street[0].toUpperCase() + analysis.street.slice(1);
+    $("actor-title").textContent = `${street} \u00b7 ${analysis.position} \u00b7 ${analysis.name} to act`;
     toggle.hidden = false;
     toggle.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.mode === analysis.mode));
     $("legend-call").textContent = analysis.can_check ? "Check" : "Call";
+    $("legend-raise").textContent = analysis.opening_bet ? "Bet" : "Raise";
     $("legend-close").hidden = analysis.mode !== "best";
     const who = analysis.is_you ? "your" : `${analysis.name}'s`;
     $("mode-caption").textContent = analysis.mode === "predicted"
@@ -215,9 +336,12 @@ export function createSolverView(app) {
         + "assuming everyone else plays like their profile."
       : `Best play: the most profitable choice for ${analysis.is_you ? "you" : analysis.name} with each hand, `
         + "assuming everyone else plays "
-        + "like their profile. Simulated with one round of responses (re-raises count as calls), hands scored by "
-        + "all-in equity (no postflop play) and no side pots. ~ marks close calls: the best two choices are within "
-        + "0.1 BB of each other.";
+        + "like their profile. Simulated with one round of responses (later bets and raises count as checks and "
+        + "calls), then the rest of the board is dealt at random and hands are scored by all-in equity (no "
+        + "betting on later streets) with no side pots. "
+        + (analysis.street === "preflop" ? "" : "Each hand is averaged over its combos, so a specific suit "
+          + "(e.g. a flush draw) can play differently. ")
+        + "~ marks close calls: the best two choices are within 0.1 BB of each other.";
   }
 
   function renderSeats() {
@@ -230,25 +354,69 @@ export function createSolverView(app) {
       el("div", { class: "who" }, seat.name),
       el("div", { class: "bet" }, seat.folded ? "Fold" : seat.all_in ? "All-in" : seat.bet > 0 ? money(seat.bet) : ""),
     )));
+    $("board").hidden = hand.board.length === 0;
+    $("board").replaceChildren(...hand.board.map(cardChip));
     const toCall = hand.legal?.to_call ?? 0;
     $("pot").textContent = money(hand.pot);
     $("to-call").textContent = money(toCall);
     $("pot-odds").textContent = toCall > 0 ? pct(toCall / (hand.pot + toCall)) : "-";
   }
 
+  function renderShowdown() {
+    const hand = state.result.state;
+    const pots = hand.pots;
+    const names = (seats) => seats.map((i) => hand.seats[i].name).join(", ");
+    $("pot-winners").replaceChildren(...pots.map((pot, k) => {
+      const title = pots.length === 1 ? "Pot" : k === 0 ? "Main pot" : `Side pot ${k}`;
+      const head = el("div", { class: "pot-title" }, `${title} ${money(pot.amount)}`);
+      if (pot.eligible.length === 1) {
+        const text = hand.players_left.length === 1 ? `${names(pot.eligible)} wins it.`
+          : `Goes back to ${names(pot.eligible)} (nobody else could match it).`;
+        return el("div", { class: "pot-row" }, head, el("p", { class: "muted" }, text));
+      }
+      return el("div", { class: "pot-row" }, head,
+        el("p", { class: "muted" }, `Who won? Tick more than one for a split pot. In it: ${names(pot.eligible)}.`),
+        el("div", { class: "pot-choices" }, pot.eligible.map((seat) => el("label", {},
+          el("input", {
+            type: "checkbox",
+            checked: state.winners[k].includes(seat),
+            onchange: (e) => {
+              state.winners[k] = e.target.checked ? [...state.winners[k], seat]
+                : state.winners[k].filter((s) => s !== seat);
+              renderStatus();
+            },
+          }),
+          hand.seats[seat].name))));
+    }));
+    renderStatus();
+  }
+
   function renderActions(analysis) {
     const hand = state.result.state;
     $("action-buttons").hidden = !analysis;
     $("hand-over").hidden = Boolean(analysis);
-    $("undo-btn").hidden = state.actions.length === 0;
+    $("board-picker").hidden = Boolean(analysis) || !hand.needs_street;
+    $("showdown").hidden = !hand.pots;
+    $("undo-btn").hidden = state.actions.length === 0 && state.boardSteps.length === 0;
     showActionError(null);
     if (!analysis) {
-      $("action-heading").textContent = "Hand summary";
       const left = hand.players_left;
-      $("hand-over").textContent = left.length === 1
-        ? `${left[0]} wins the pot of ${money(hand.pot)}.`
-        : `${left.join(", ")} see the flop with ${money(hand.pot)} in the pot. `
-          + "Choosing the flop cards comes next (not built yet).";
+      if (hand.needs_street) {
+        const needed = hand.cards_needed;
+        $("action-heading").textContent = `Choose the ${hand.needs_street}`;
+        $("hand-over").textContent = `${left.join(", ")} see the ${hand.needs_street} with ${money(hand.pot)} `
+          + `in the pot. Pick ${needed === 1 ? "1 card" : `${needed} cards`}.`;
+        renderPicker();
+        return;
+      }
+      $("action-heading").textContent = "Hand summary";
+      if (left.length === 1) $("hand-over").textContent = `${left[0]} wins the pot of ${money(hand.pot)}.`;
+      else {
+        $("hand-over").textContent = `${left.join(", ")} go to showdown with ${money(hand.pot)} in the pot`
+          + (hand.street === "river" ? "." : " (at most one of them has chips left, so there's no more betting).")
+          + " Pick who won, then deal the next hand. Profiles aren't changed.";
+      }
+      renderShowdown();
       return;
     }
     $("action-heading").textContent = analysis.is_you ? "Choose your action" : `Choose ${analysis.name}'s action`;
@@ -261,7 +429,8 @@ export function createSolverView(app) {
     input.min = (legal.min_raise_to * bb()).toFixed(2);
     input.max = (legal.max_raise_to * bb()).toFixed(2);
     input.value = (analysis.raise_to * bb()).toFixed(2);
-    $("raise-btn").textContent = analysis.raise_to >= legal.max_raise_to ? "All-in" : "Raise to";
+    $("raise-btn").textContent = analysis.raise_to >= legal.max_raise_to ? "All-in"
+      : analysis.opening_bet ? "Bet" : "Raise to";
   }
 
   function renderLog() {
@@ -271,10 +440,17 @@ export function createSolverView(app) {
     const blinds = el("li", { class: "muted" },
       `Blinds: ${sb.name} $${c.small_blind.toFixed(2)}, ${bigBlind.name} $${c.big_blind.toFixed(2)}`);
     const verbs = { fold: "folds", check: "checks", call: "calls" };
-    $("action-log").replaceChildren(blinds, ...log.map((entry) => el("li", {},
-      `${entry.position} ${entry.name} `,
-      entry.kind === "raise" ? `raises to ${money(entry.to)}` : verbs[entry.kind],
-      entry.fits_profile ? null : el("span", { class: "warn" }, " (not what their profile predicts)"))));
+    $("action-log").replaceChildren(blinds, ...log.map((entry) => {
+      if (entry.kind === "board") {
+        const street = entry.street[0].toUpperCase() + entry.street.slice(1);
+        return el("li", { class: "street" }, `${street}: ${entry.cards.map(cardText).join(" ")} `
+          + `(pot ${money(entry.pot)})`);
+      }
+      const verb = entry.kind === "raise" ? `raises to ${money(entry.to)}`
+        : entry.kind === "bet" ? `bets ${money(entry.to)}` : verbs[entry.kind];
+      return el("li", {}, `${entry.position} ${entry.name} ${verb}`,
+        entry.fits_profile ? null : el("span", { class: "warn" }, " (not what their profile predicts)"));
+    }));
   }
 
   function renderStats(analysis) {
@@ -282,7 +458,8 @@ export function createSolverView(app) {
     const slug = state.table[analysis.seat].player;
     $("stats-heading").textContent = analysis.is_you ? "Your profile" : `${analysis.name}'s profile`;
     $("edit-notes-link").href = analysis.is_you ? "#profile" : `#players/${encodeURIComponent(slug)}`;
-    $("actor-stats").replaceChildren(...ACTOR_STATS.map((key) => {
+    const keys = ACTOR_STATS[analysis.street === "preflop" ? "preflop" : "postflop"];
+    $("actor-stats").replaceChildren(...keys.map((key) => {
       const stat = profile.stats[key];
       return el("div", { class: "stat-row" },
         el("span", { title: app.statDefinitions[key] ?? "" }, STAT_LABELS[key]),
@@ -318,9 +495,10 @@ export function createSolverView(app) {
   function renderHand(analysis) {
     const hand = analysis.hands.find((h) => h.name === state.selected);
     const kind = hand.name.length === 2 ? "pair" : hand.name.endsWith("s") ? "suited" : "offsuit";
-    const combos = { pair: 6, suited: 4, offsuit: 12 }[kind];
+    const total = { pair: 6, suited: 4, offsuit: 12 }[kind];
+    const combos = hand.combos === total ? `${total} combos` : `${hand.combos} of ${total} combos left`;
     $("hand-name").textContent = hand.name;
-    $("hand-meta").textContent = `${combos} combos \u00b7 ${kind}`;
+    $("hand-meta").textContent = `${combos} \u00b7 ${kind}`;
     // One action per hand: "Best" (best play) or "Likely" (predicted), plus
     // "Sometimes" for a predicted hand on the edge of two parts of their range.
     const top = DISPLAY_ORDER.reduce((a, b) => (hand.freqs[COLUMN[b]] > hand.freqs[COLUMN[a]] ? b : a));
@@ -389,11 +567,9 @@ export function createSolverView(app) {
     state.raiseTo = toBB(Number(e.target.value));
     refresh();
   });
-  $("undo-btn").addEventListener("click", () => {
-    state.actions.pop();
-    state.raiseTo = null;
-    refresh();
-  });
+  $("undo-btn").addEventListener("click", undo);
+  $("deal-street-btn").addEventListener("click", dealStreet);
+  $("next-hand-btn").addEventListener("click", nextHand);
   $("redeal-btn").addEventListener("click", deal);
   $("edit-table-btn").addEventListener("click", () => showSetup());
 

@@ -89,6 +89,28 @@ def test_hand_rejects_bad_requests(client, seats, actions):
     assert "error" in res.get_json()
 
 
+def test_hand_with_board(client):
+    client.post("/api/players", json={"name": "Dave"})
+    seats = [{"player": "dave"}, {"player": "you"}]
+    actions = [{"kind": "call"}, {"kind": "check"}]
+    body = client.post("/api/hand", json={"seats": seats, "actions": actions, "board": ["Ks", "7d", "2c"]})
+    assert body.status_code == 200 and body.get_json()["analysis"]["street"] == "flop"
+    bad = client.post("/api/hand", json={"seats": seats, "actions": actions, "board": ["Ks", "7d", "Zz"]})
+    assert bad.status_code == 400 and "Invalid card" in bad.get_json()["error"]
+
+
+def test_hand_settlement(client):
+    client.post("/api/players", json={"name": "Dave"})
+    seats = [{"player": "dave", "stack": 50}, {"player": "you", "stack": 50}]
+    actions = [{"kind": "raise", "to": 50}, {"kind": "call"}]  # all-in preflop: straight to showdown
+    body = client.post("/api/hand", json={"seats": seats, "actions": actions}).get_json()
+    assert body["state"]["pots"] == [{"amount": 100, "eligible": [0, 1]}]
+    split = client.post("/api/hand", json={"seats": seats, "actions": actions, "winners": [[0, 1]]})
+    assert split.get_json()["settlement"]["stacks"] == [50, 50]
+    bad = client.post("/api/hand", json={"seats": seats, "actions": actions, "winners": [5]})
+    assert bad.status_code == 400
+
+
 def test_river_validation(client):
     res = client.post("/api/solve/river", json={"board": "Ks7d2c"})
     assert res.status_code == 400

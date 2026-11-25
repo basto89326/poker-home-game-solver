@@ -97,6 +97,29 @@ def combo_counts() -> np.ndarray:
 
 
 @lru_cache(maxsize=1)
+def all_combos() -> np.ndarray:
+    """All 1326 combos as a (1326, 2) card array, grouped by class in class-id order."""
+    combos = np.array([c for combos in class_combos() for c in combos], dtype=np.int64)
+    combos.setflags(write=False)
+    return combos
+
+
+@lru_cache(maxsize=1)
+def combo_classes() -> np.ndarray:
+    """Class id of each combo in :func:`all_combos` order (length 1326)."""
+    classes = np.repeat(np.arange(NUM_CLASSES), combo_counts().astype(int))
+    classes.setflags(write=False)
+    return classes
+
+
+def live_combos(board: list[int]) -> np.ndarray:
+    """(1326,) True for combos that share no card with ``board``."""
+    dead = np.zeros(52, bool)
+    dead[list(board)] = True
+    return ~dead[all_combos()].any(axis=1)
+
+
+@lru_cache(maxsize=1)
 def class_compatibility() -> np.ndarray:
     """169x169 matrix: number of card-disjoint combo pairs between two classes.
 

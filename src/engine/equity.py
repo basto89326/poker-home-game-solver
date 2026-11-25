@@ -4,18 +4,21 @@
   Monte Carlo (card removal handled exactly by sampling only disjoint combos).
   It takes a minute or two to build, so it is cached in ``data/``.
 * River: exact showdown results between specific combos on a 5-card board.
+* Board strength: how strong every combo is on a flop, turn or river, used to
+  rank a player's range after the flop.
 """
 
 from __future__ import annotations
 
 import logging
 from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
 from itertools import repeat
 from pathlib import Path
 
 import numpy as np
 
-from .cards import NUM_CLASSES, Combo, combo_table
+from .cards import NUM_CLASSES, Combo, all_combos, combo_table, live_combos
 from .evaluator import evaluate
 
 log = logging.getLogger(__name__)
@@ -23,6 +26,8 @@ log = logging.getLogger(__name__)
 DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "preflop_equity.npy"
 SAMPLES_PER_MATCHUP = 2000  # ~1% standard error per matchup
 _SEED = 2026
+STRENGTH_SAMPLES = 200  # deals per combo: ~3.5% standard error on its equity
+_STRENGTH_CHUNK_ROWS = 40_000  # rows simulated at once, to keep memory small
 
 
 def _sample_row(i: int, samples: int, seed: int) -> np.ndarray:
@@ -77,6 +82,42 @@ def load_preflop_equity(cache: Path = DEFAULT_CACHE) -> np.ndarray:
     cache.parent.mkdir(parents=True, exist_ok=True)
     np.save(cache, equity)
     return equity
+
+
+@lru_cache(maxsize=32)
+def board_strength(board: tuple[int, ...], samples: int = STRENGTH_SAMPLES) -> np.ndarray:
+    """(1326,) strength of every combo on a 3-5 card board (0 for combos the board blocks).
+
+    River: the combo's showdown score (only the order matters). Flop/turn: its
+    all-in equity against one random hand with the rest of the board dealt at
+    random, estimated by Monte Carlo (``samples`` deals per combo, seeded by
+    the board so the same board always gives the same answer).
+    """
+    if len(board) not in (3, 4, 5):
+        raise ValueError("board strength needs 3 to 5 board cards")
+    combos = all_combos()
+    live = live_combos(list(board))
+    strength = np.zeros(len(combos))
+    if len(board) == 5:
+        strength[live] = evaluate(np.hstack([combos[live], np.tile(board, (live.sum(), 1))]))
+        return strength
+    rng = np.random.default_rng([_SEED, *board])
+    need = 2 + 5 - len(board)  # opponent's two cards plus the rest of the board
+    ids = np.flatnonzero(live)
+    for chunk in np.array_split(ids, max(1, len(ids) * samples // _STRENGTH_CHUNK_ROWS)):
+        hero_ids = np.repeat(chunk, samples)
+        rows = np.arange(len(hero_ids))[:, None]
+        hero = combos[hero_ids]
+        keys = rng.random((len(hero_ids), 52))
+        keys[rows, hero] = 2.0
+        keys[:, list(board)] = 2.0
+        drawn = np.argpartition(keys, need, axis=1)[:, :need]
+        full_board = np.hstack([np.tile(board, (len(hero_ids), 1)), drawn[:, 2:]])
+        hero_score = evaluate(np.hstack([hero, full_board]))
+        opp_score = evaluate(np.hstack([drawn[:, :2], full_board]))
+        result = (hero_score > opp_score) + 0.5 * (hero_score == opp_score)
+        strength[chunk] = result.reshape(len(chunk), samples).mean(axis=1)
+    return strength
 
 
 def river_showdown(combos: list[Combo], board: list[int]) -> np.ndarray:
