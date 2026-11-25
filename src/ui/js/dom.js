@@ -35,8 +35,11 @@ export const STAT_LABELS = {
   river_bluff: "River bluff",
 };
 
+/** Badge for the AI's confidence in a stat (how well the notes support it), not the stat's size. */
 export function confidenceBadge(level) {
-  return el("span", { class: `badge ${level}` }, level[0].toUpperCase() + level.slice(1));
+  const title = "How much your notes support this number" +
+    (level === "low" ? " (low usually means a placeholder default)" : "");
+  return el("span", { class: `badge ${level}`, title }, `${level[0].toUpperCase()}${level.slice(1)} conf.`);
 }
 
 export function statBar(value) {
